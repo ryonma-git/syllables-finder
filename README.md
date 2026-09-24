@@ -3,7 +3,12 @@
 > 2026-09-24: SSOT運用へ移行しました。今後の作業場所・同期・検証手順は [docs/SSOT.md](docs/SSOT.md) を参照してください。元のアプリ本体は保持しています。
 
 英語テキストを入力すると、**発音上の母音核（声を乗せるべき母音）にあたる文字だけを赤字**にした
-Word（.docx）ファイルを生成する、ローカルGUIアプリです。
+Word（.docx）ファイルや PDF を生成する、ローカルGUIアプリです。
+
+プリントは A4 縦で、Word と PDF は同じデザインです。各ページの上部に紺の見出し帯（タイトル）と
+黄色のアクセント線、凡例「● 赤い文字に声をのせて読もう（例 make）」と なまえ欄、
+下部にページ番号「1 / 2」が入ります。本文は空行で区切られた連ごとに、左へ淡い縦線が付きます。
+装飾には赤系の色を使いません（赤＝声をのせる母音、という意味を保つため）。
 
 ## このツールの目的
 
@@ -22,6 +27,7 @@ Word（.docx）ファイルを生成する、ローカルGUIアプリです。
 
 - Python 3
 - [python-docx](https://python-docx.readthedocs.io/)（.docx 出力に必須）
+- [reportlab](https://www.reportlab.com/)（PDF 出力に必須）
 - tkinter（Python 標準。GUI 用）
 
 ## インストール
@@ -41,7 +47,7 @@ pip install -r requirements.txt
 
 Finder で **`起動.command`** をダブルクリックすると GUI が開きます。
 このランチャーはプロジェクト内の仮想環境 `.venv`（Homebrew Python ＝ 新しい Tk 9.0 ベース）を
-使います。`.venv` が無ければ自動で作成し python-docx も入れてから起動します。
+使います。`.venv` が無ければ自動で作成し python-docx と reportlab も入れてから起動します。
 （初回に「開発元を確認できません」と出た場合は、ファイルを右クリック →「開く」を選びます。）
 
 ### ターミナルから
@@ -55,7 +61,7 @@ cd /Users/ryon/Projects-Ishibashi/syllables-finder
 
 ```bash
 /opt/homebrew/bin/python3 -m venv .venv
-.venv/bin/python -m pip install python-docx
+.venv/bin/python -m pip install python-docx reportlab
 ```
 
 > 注意: Apple 標準の `/usr/bin/python3` は **Tk 8.5 が古く**、macOS のダークモードで
@@ -64,7 +70,7 @@ cd /Users/ryon/Projects-Ishibashi/syllables-finder
 
 GUI が開きます。
 
-### テキストを貼り付けて docx を生成する流れ
+### テキストを貼り付けて docx / PDF を生成する流れ
 
 1. **大きな入力欄** に英語テキストを貼り付け（複数行・歌やチャンツの改行もそのまま保持されます）。
 2. **オプション** を必要に応じて調整。
@@ -73,11 +79,20 @@ GUI が開きます。
    - 例外辞書を使う（デフォルト オン）
    - silent e を赤字にしない（デフォルト オン）
    - y を母音として扱う（デフォルト オン）
-3. **出力ファイル名** を入力（デフォルト `red_vowel_output.docx`）。
+3. **タイトル（任意）** と **出力ファイル名** を入力（デフォルト `red_vowel_output.docx`）。
+   - タイトルは見出し帯に出ます。空欄なら「Let's Read & Sing!」。ライブラリの曲を読み込むと曲名が入ります。
 4. **プレビュー** ボタンで、赤字対象を角括弧 `[ ]` で囲んだ簡易表示を確認。
    例: `make a dream` → `m[a]ke [a] dr[ea]m`
 5. **docx を生成** ボタンで保存先を選び、Word ファイルを書き出します。
+   **PDF を生成** ボタンなら、同じデザインの PDF を書き出します（拡張子は自動で `.pdf` になります）。
 6. 完了メッセージが出ます。
+
+> PDF の赤字は後から直せません。赤字を直したいときは docx を生成して Word で修正し、
+> Word から PDF に書き出してください。
+>
+> PDF のフォント: 欧文は指定フォントを macOS のフォントフォルダから探して埋め込みます
+> （見つからなければ Arial で代用し、完了メッセージでお知らせします）。日本語は Word 付属の
+> 游ゴシック、無ければ Arial Unicode MS を使います。
 
 ### コマンドラインだけで確認したいとき
 
@@ -123,7 +138,9 @@ python3 test_vowel_marker.py
 | `vowel_marker.py` | 中心ロジック。`mark_vowel_nuclei()` ほか、行・テキスト処理 |
 | `exception_dictionary.py` | 例外辞書 `EXCEPTIONS` |
 | `pd_songs.py` | 著作権フリー（PD）の歌・チャンツ ライブラリ `SONGS` |
+| `sheet_design.py` | プリントのデザイン定義（用紙・色・文言。Word と PDF で共通） |
 | `docx_writer.py` | python-docx による .docx 書き出し |
+| `pdf_writer.py` | reportlab による PDF 書き出し（Word と同じデザイン） |
 | `test_vowel_marker.py` | 品質確認テスト |
 | `requirements.txt` | 依存パッケージ |
 
