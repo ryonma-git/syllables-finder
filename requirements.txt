@@ -1,0 +1,6 @@
+# 必須: .docx 出力に使用
+python-docx>=1.1.0
+
+# tkinter は Python 標準ライブラリに含まれます（pip 不要）。
+# macOS で「No module named _tkinter」と出る場合は python.org 版の Python か、
+# Homebrew の python-tk を使ってください:  brew install python-tk
