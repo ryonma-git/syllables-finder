@@ -1,0 +1,33 @@
+# Machine-specific environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.pytest_cache/
+.coverage
+
+# User state, generated documents, and local data
+.ui_state.json
+*.docx
+*.pdf
+*.xlsx
+outputs/
+data/
+recordings/
+models/
+
+# Credentials and private configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# Generated build products
+build/
+dist/
+DerivedData/
+node_modules/

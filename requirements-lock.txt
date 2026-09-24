@@ -1,0 +1,5 @@
+# Tested dependency versions from the existing Ishibashi environment.
+# Python itself and Tk are provided by the local machine, outside Git.
+python-docx==1.2.0
+lxml==6.1.1
+typing_extensions==4.15.0

@@ -1,5 +1,7 @@
 # Red Vowel Maker — 母音核 赤字メーカー
 
+> 2026-09-24: SSOT運用へ移行しました。今後の作業場所・同期・検証手順は [docs/SSOT.md](docs/SSOT.md) を参照してください。元のアプリ本体は保持しています。
+
 英語テキストを入力すると、**発音上の母音核（声を乗せるべき母音）にあたる文字だけを赤字**にした
 Word（.docx）ファイルを生成する、ローカルGUIアプリです。
 
@@ -45,7 +47,7 @@ Finder で **`起動.command`** をダブルクリックすると GUI が開き�
 ### ターミナルから
 
 ```bash
-cd /Users/ryon/Projects/syllables-finder
+cd /Users/ryon/Projects-Ishibashi/syllables-finder
 .venv/bin/python app.py
 ```
 
