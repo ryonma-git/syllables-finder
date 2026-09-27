@@ -23,13 +23,14 @@ public struct SongDocument: Codable, Equatable, Sendable {
     public func words(in phrase: Phrase) -> [Word] { phrase.wordIDs.compactMap { word($0) } }
     public func syllables(in word: Word) -> [Syllable] { word.syllableIDs.compactMap { syllable($0) } }
 
-    public func ranges(for target: LanguageTarget) -> [BeatRange] {
+    /// Time ranges where a language item is sung; with `partID`, only in that part.
+    public func ranges(for target: LanguageTarget, inPart partID: UUID? = nil) -> [BeatRange] {
         alignments.filter { $0.languageTargets.contains(target) }.flatMap { alignment in
             alignment.musicTargets.compactMap { destination in
                 switch destination {
-                case .timeRange(let range): return range
+                case .timeRange(let range): return partID == nil ? range : nil
                 case .event(let id, let relative):
-                    guard let event = event(id) else { return nil }
+                    guard let event = event(id), partID == nil || event.partID == partID else { return nil }
                     if let relative {
                         guard let start = try? event.onset.adding(relative.start),
                               let end = try? event.onset.adding(relative.end) else { return nil }

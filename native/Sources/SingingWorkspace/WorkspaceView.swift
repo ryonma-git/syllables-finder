@@ -79,6 +79,7 @@ struct WorkspaceView: View {
     @State private var input = ""
     @State private var inputLanguage = "en"
     @State private var splitSyllables = true
+    @State private var pendingMIDI: PendingMIDIImport?
     private var song: SongDocument { file.song }
     private var phrase: Phrase? { session.phraseID.flatMap { song.phrase($0) } ?? song.phrases.first }
 
@@ -137,6 +138,7 @@ struct WorkspaceView: View {
                     Button("歌詞を音符に割り当てる…", systemImage: "text.line.first.and.arrowtriangle.forward") { session.showingAlignment = true }
                         .disabled(song.music.events.isEmpty || song.syllables.isEmpty)
                     Button("声部…", systemImage: "person.3") { session.showingParts = true }
+                    Button("MIDIファイルを読み込む…", systemImage: "square.and.arrow.down") { chooseMIDIFile() }
                     Divider()
                     Button("未分割の単語を音節に分ける", systemImage: "scissors") {
                         mutate("未分割の単語を音節に分ける") { doc in
@@ -198,6 +200,18 @@ struct WorkspaceView: View {
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
         .sheet(isPresented: $showingSamples) { samplePicker }
         .sheet(isPresented: $session.showingParts) { PartsSheet(song: song, session: session, mutate: mutate) }
+        .sheet(item: $pendingMIDI) { pending in
+            MIDIImportSheet(song: song, pending: pending) { ids, replace, grid in
+                stopPlayback()
+                mutate("MIDIファイルを読み込む") { doc in
+                    let parts = try pending.parsed.apply(to: &doc, candidateIDs: ids, replace: replace, grid: grid)
+                    if let first = parts.first { Task { @MainActor in session.partID = first } }
+                }
+                do { try file.package.attach(pending.data, at: ["source", pending.fileName]) }
+                catch { session.error = "元のMIDIファイルを文書に保存できませんでした: \(error.localizedDescription)" }
+                session.position = 0
+            }
+        }
         .sheet(isPresented: $session.showingAlignment) {
             AlignmentProposalSheet(song: song, initialPartID: session.partID) { proposal in
                 mutate("歌詞を音符に割り当てる") { LyricAligner.apply(proposal, to: &$0) }
@@ -454,6 +468,29 @@ struct WorkspaceView: View {
         if let start = first.first?.range.start, let end = first.last?.range.end {
             session.practiceRange = .init(start: start, end: end)
         } else { session.practiceRange = nil }
+    }
+
+    private func chooseMIDIFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.midi]
+        panel.allowsMultipleSelection = false
+        panel.message = "旋律を含むMIDIファイル（SMF）を選んでください。利用する権利のあるファイルを使ってください。"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let data = try Data(contentsOf: url)
+                    let parsed = try MIDIFileImport.parse(data)
+                    guard !parsed.candidates.isEmpty else {
+                        session.error = (["音符が見つかりませんでした。"] + parsed.diagnostics).joined(separator: "\n"); return
+                    }
+                    let name = url.lastPathComponent.replacingOccurrences(of: "/", with: "-")
+                    pendingMIDI = .init(fileName: name, data: data, parsed: parsed)
+                } catch {
+                    session.error = "MIDIファイルを読み込めませんでした: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     private enum SheetFormat {

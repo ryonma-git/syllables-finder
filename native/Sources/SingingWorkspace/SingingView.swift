@@ -275,10 +275,15 @@ private struct SingingTimelineRow: View {
         }.frame(width: width, height: height)
     }
 
+    /// With several parts, the lyric lanes follow the selected part so that they do not stack up.
+    private var lyricPart: UUID? {
+        song.music.parts.count > 1 ? (song.music.part(session.partID)?.id ?? song.music.parts.first?.id) : nil
+    }
+
     private var lyrics: some View {
         ZStack(alignment: .topLeading) {
             ForEach(song.words) { word in
-                let segments = song.syllables(in: word).flatMap { song.ranges(for: .init(.syllable, $0.id)) }
+                let segments = song.syllables(in: word).flatMap { song.ranges(for: .init(.syllable, $0.id), inPart: lyricPart) }
                     .compactMap(clipped)
                 if let first = segments.map(\.0).min(), let last = segments.map(\.1).max() {
                     Button {
@@ -294,7 +299,7 @@ private struct SingingTimelineRow: View {
                 }
             }
             ForEach(song.syllables) { syllable in
-                let segments = song.ranges(for: .init(.syllable, syllable.id)).compactMap(clipped)
+                let segments = song.ranges(for: .init(.syllable, syllable.id), inPart: lyricPart).compactMap(clipped)
                 ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     Button {
                         session.syllableID = syllable.id; session.wordID = syllable.parentWordID
@@ -346,6 +351,7 @@ private struct SingingTimelineRow: View {
                             .frame(width: max(18, (segment.1 - segment.0) * scale - 2), height: keyHeight - 2, alignment: .leading)
                             .background(session.eventID == event.id ? Color.teal.opacity(0.75) : Color.teal.opacity(0.4), in: RoundedRectangle(cornerRadius: 3))
                     }.buttonStyle(.plain).offset(x: x(segment.0) + 1, y: y)
+                        .opacity(lyricPart == nil || event.partID == lyricPart ? 1 : 0.35)
                         .accessibilityLabel("\(event.note?.name ?? "休符")、\(event.duration.doubleValue)拍、音符を編集")
                 }
             }

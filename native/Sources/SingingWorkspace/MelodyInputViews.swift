@@ -350,3 +350,75 @@ final class MIDIInputMonitor: ObservableObject {
         sourceNames = []
     }
 }
+
+// MARK: MIDI file import
+
+struct PendingMIDIImport: Identifiable {
+    let id = UUID()
+    let fileName: String
+    let data: Data
+    let parsed: MIDIFileImport
+}
+
+struct MIDIImportSheet: View {
+    let song: SongDocument
+    let pending: PendingMIDIImport
+    let apply: (_ candidateIDs: [Int], _ replace: Bool, _ grid: Beat?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: Set<Int> = []
+    @State private var replace = true
+    @State private var grid = "0.25"
+
+    private let grids: [(String, String)] = [("none", "揃えない（元の時間のまま）"), ("0.5", "8分音符"), ("0.25", "16分音符"), ("0.125", "32分音符"), ("0.333333", "3連8分")]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("MIDIファイルを読み込む").font(.title2.bold())
+            Text("\(pending.fileName) · format \(pending.parsed.format) · 分解能 \(pending.parsed.ticksPerQuarter)")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("読み込む声部").font(.caption.weight(.semibold)).foregroundStyle(.teal)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(pending.parsed.candidates) { candidate in
+                        Toggle(isOn: Binding(get: { selected.contains(candidate.id) }, set: { on in
+                            if on { selected.insert(candidate.id) } else { selected.remove(candidate.id) }
+                        })) {
+                            HStack {
+                                Text(candidate.name).frame(width: 200, alignment: .leading)
+                                Text("\(candidate.notes.count)音 · \(Note(pitch: candidate.pitchRange.lowerBound).name)–\(Note(pitch: candidate.pitchRange.upperBound).name)")
+                                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                                if candidate.isPolyphonic {
+                                    Text("和音あり（楽譜はピアノロールで表示）").font(.caption).foregroundStyle(.orange)
+                                }
+                            }
+                        }.toggleStyle(.checkbox)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(height: min(180, Double(pending.parsed.candidates.count) * 26 + 10))
+            if !song.music.events.isEmpty {
+                Picker("今の音符", selection: $replace) {
+                    Text("置き換える（今の音符と、その歌詞の割り当てを消す）").tag(true)
+                    Text("声部として追加する（テンポ・拍子は今のまま）").tag(false)
+                }.pickerStyle(.radioGroup)
+            }
+            Picker("タイミングを揃える", selection: $grid) { ForEach(grids, id: \.0) { Text($0.1).tag($0.0) } }.frame(width: 340)
+            Text("演奏したMIDIは少しずれていることがあります。揃えると楽譜で読みやすくなります。元のファイルは文書内に保存します。")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(pending.parsed.diagnostics, id: \.self) { Label($0, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange) }
+            HStack {
+                Button("キャンセル", role: .cancel) { dismiss() }
+                Spacer()
+                Button("読み込む") {
+                    let value: Beat? = grid == "none" ? nil : grid == "0.333333" ? try? Beat(1, 3) : Double(grid).flatMap { try? Beat.grid($0, divisions: 8) }
+                    apply(pending.parsed.candidates.map(\.id).filter(selected.contains), song.music.events.isEmpty || replace, value)
+                    dismiss()
+                }.buttonStyle(.borderedProminent).disabled(selected.isEmpty)
+            }
+        }.padding(26).frame(width: 580)
+            .onAppear {
+                // Preselect monophonic candidates; they are the likely vocal lines.
+                let melodic = pending.parsed.candidates.filter { !$0.isPolyphonic }.map(\.id)
+                selected = Set(melodic.isEmpty ? pending.parsed.candidates.map(\.id) : melodic)
+            }
+    }
+}
