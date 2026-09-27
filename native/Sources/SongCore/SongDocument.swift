@@ -1,7 +1,7 @@
 import Foundation
 
 public struct SongDocument: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
     public var schemaVersion = currentSchemaVersion
     public var id = UUID()
     public var revision: UInt64 = 0
@@ -59,14 +59,69 @@ public struct SongDocument: Codable, Equatable, Sendable {
     }
 
     public static func decode(_ data: Data) throws -> SongDocument {
+        try decodeReportingMigration(data).document
+    }
+
+    /// Decodes the current schema, or migrates a version 1 document in memory. The caller keeps
+    /// the original bytes when `migratedFrom` is set, so saving never loses the old file.
+    public static func decodeReportingMigration(_ data: Data) throws -> (document: SongDocument, migratedFrom: Int?) {
         guard data.count <= 20_000_000 else { throw SongError.invalid("文書が大きすぎます（上限20MB）。") }
         struct Header: Decodable { var schemaVersion: Int }
         let decoder = JSONDecoder()
         let header = try decoder.decode(Header.self, from: data)
-        guard header.schemaVersion == currentSchemaVersion else { throw SongError.unsupportedVersion(header.schemaVersion) }
-        let document = try decoder.decode(Self.self, from: data)
-        try document.validate()
-        return document
+        switch header.schemaVersion {
+        case currentSchemaVersion:
+            let document = try decoder.decode(Self.self, from: data)
+            try document.validate()
+            return (document, nil)
+        case 1:
+            var document = try decoder.decode(Self.self, from: data)
+            document.migrateFromVersion1()
+            try document.validate()
+            return (document, 1)
+        default:
+            throw SongError.unsupportedVersion(header.schemaVersion)
+        }
+    }
+
+    /// Version 1 had no parts. Distinct `Notation.part` labels become parts; otherwise one melody part.
+    mutating func migrateFromVersion1() {
+        schemaVersion = Self.currentSchemaVersion
+        var labels: [String] = []
+        for event in music.events {
+            if let label = event.note?.notation?.part, !label.isEmpty, !labels.contains(label) { labels.append(label) }
+        }
+        if labels.count <= 1 {
+            ensureParts(defaultPartID: Self.derivedID(id, salt: 1), name: labels.first ?? "旋律")
+            return
+        }
+        for (index, label) in labels.enumerated() {
+            let pitches = music.events.filter { $0.note?.notation?.part == label }.compactMap { $0.note?.pitch }
+            music.parts.append(.init(id: Self.derivedID(id, salt: UInt8(index + 1)), name: label, clef: .suggested(forPitches: pitches)))
+        }
+        for index in music.events.indices {
+            let label = music.events[index].note?.notation?.part
+            music.events[index].partID = music.parts.first { $0.name == label }?.id ?? music.parts[0].id
+        }
+    }
+
+    /// Gives parentless events a part: the first part, or a new melody part when there is none.
+    public mutating func ensureParts(defaultPartID: UUID = UUID(), name: String = "旋律") {
+        guard music.events.contains(where: { $0.partID == nil || music.part($0.partID) == nil }) else { return }
+        if music.parts.isEmpty {
+            let pitches = music.events.compactMap { $0.note?.pitch }
+            music.parts.append(.init(id: defaultPartID, name: name, clef: .suggested(forPitches: pitches)))
+        }
+        let fallback = music.parts[0].id
+        for index in music.events.indices where music.part(music.events[index].partID) == nil {
+            music.events[index].partID = fallback
+        }
+    }
+
+    static func derivedID(_ base: UUID, salt: UInt8) -> UUID {
+        var bytes = base.uuid
+        bytes.15 ^= salt; bytes.14 ^= 0xA5
+        return UUID(uuid: bytes)
     }
 
     public func validate() throws {
@@ -78,6 +133,7 @@ public struct SongDocument: Codable, Equatable, Sendable {
         let allIDs = [id] + sections.map(\.id) + phrases.map(\.id) + words.map(\.id)
             + syllables.map(\.id) + moras.map(\.id) + phonemes.map(\.id)
             + music.events.map(\.id) + music.measures.map(\.id) + music.spans.map(\.id) + alignments.map(\.id)
+            + music.parts.map(\.id)
         try require(unique(allIDs), "文書内のIDが重複しています。")
         let phraseIDs = Set(phrases.map(\.id)), wordIDs = Set(words.map(\.id))
         let syllableIDs = Set(syllables.map(\.id)), moraIDs = Set(moras.map(\.id))
@@ -122,6 +178,15 @@ public struct SongDocument: Codable, Equatable, Sendable {
                 try require(moraIndex[id]?.parentSyllableID == phoneme.parentSyllableID && moraIndex[id]?.phonemeIDs.contains(phoneme.id) == true,
                             "音素のモーラ参照が不正です。")
             }
+        }
+        let partIDs = Set(music.parts.map(\.id))
+        try require(music.events.isEmpty || !music.parts.isEmpty, "音符があるのに声部がありません。")
+        for part in music.parts {
+            try require(!part.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "声部の名前が空です。")
+            if let order = part.phraseIDs { try require(Set(order).isSubset(of: phraseIDs), "声部の歌詞順に存在しないフレーズがあります。") }
+        }
+        for event in music.events {
+            try require(event.partID.map(partIDs.contains) == true, "声部に属さない音符・休符があります。")
         }
         for measure in music.measures { try measure.range.validate() }
         for event in music.events {

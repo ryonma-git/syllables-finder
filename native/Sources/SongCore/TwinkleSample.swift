@@ -142,6 +142,7 @@ public enum TwinkleSample {
             doc.music.spans.append(.init(id: id(), kind: .phrase, title: line.text, range: range, eventIDs: eventIDs))
         }
         doc.sections = [.init(id: sectionID, title: "第1節", phraseIDs: doc.phrases.map(\.id))]
+        doc.ensureParts(defaultPartID: id())
         return doc
     }
 }

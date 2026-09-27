@@ -51,6 +51,7 @@ public enum SampleSongDocument {
         ]
         doc.sections = [.init(id: sectionID, title: "練習 1", phraseIDs: [p1, p2])]
         doc.music.spans = doc.phrases.map { .init(id: id(), kind: .phrase, title: $0.originalText, range: $0.timeRange!, eventIDs: $0.musicalEventIDs) }
+        doc.ensureParts(defaultPartID: id())
         return doc
     }
 

@@ -10,6 +10,8 @@ public struct StaffPiece: Sendable, Equatable {
     public let accidental: String?
     public let tiedFrom: Bool
     public let tiedTo: Bool
+    /// Absolute diatonic index (octave × 7 + letter, C = 0), independent of the clef.
+    public var diatonic: Int? { step.map { $0 + 4 * 7 + 2 } }
 }
 
 /// A readable treble clef projection for simple monophonic melodies.
@@ -23,7 +25,7 @@ public struct NotationProjection: Sendable {
     private static let naturals: [Character: Int] = ["C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11]
     private static let steps: [Character: Int] = ["C": 0, "D": 1, "E": 2, "F": 3, "G": 4, "A": 5, "B": 6]
 
-    public init(song: SongDocument, measures: [MeasureSlice]) {
+    public init(song: SongDocument, measures: [MeasureSlice], including include: (MusicalEvent) -> Bool = { _ in true }) {
         var output: [StaffPiece] = []
         var problem: String?
         var notice: String?
@@ -32,7 +34,7 @@ public struct NotationProjection: Sendable {
             let from = measure.range.start.doubleValue
             let to = measure.range.end.doubleValue
             let events = song.music.events.filter {
-                guard let end = try? $0.range.end.doubleValue else { return false }
+                guard include($0), let end = try? $0.range.end.doubleValue else { return false }
                 return $0.onset.doubleValue < to && from < end
             }.sorted { $0.onset < $1.onset }
             var cursor = from

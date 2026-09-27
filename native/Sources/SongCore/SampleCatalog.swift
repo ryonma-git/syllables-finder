@@ -109,6 +109,7 @@ public enum SampleCatalog {
                     range: .init(start: beat(Double(index * 4)), end: beat(min(cursor, Double((index + 1) * 4)))))
         }
         song.sections = [.init(id: sectionID, title: "第1節", phraseIDs: song.phrases.map(\.id))]
+        song.ensureParts(defaultPartID: id())
         return song
     }
 

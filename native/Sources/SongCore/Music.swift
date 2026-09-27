@@ -27,14 +27,42 @@ public struct Note: Codable, Equatable, Sendable {
 
 public enum EventContent: Codable, Equatable, Sendable { case note(Note), rest }
 
+public enum Clef: String, Codable, CaseIterable, Sendable {
+    case treble, treble8vb, bass
+    /// Diatonic index (octave × 7 + letter, C = 0) of the bottom staff line.
+    public var bottomLineDiatonic: Int {
+        switch self {
+        case .treble: 4 * 7 + 2     // E4
+        case .treble8vb: 3 * 7 + 2  // E3
+        case .bass: 2 * 7 + 4       // G2
+        }
+    }
+    public var label: String {
+        switch self {
+        case .treble: "ト音記号"
+        case .treble8vb: "ト音記号（1オクターブ下）"
+        case .bass: "ヘ音記号"
+        }
+    }
+    /// A readable default for a sung range, by median pitch.
+    public static func suggested(forPitches pitches: [Int]) -> Clef {
+        guard !pitches.isEmpty else { return .treble }
+        let median = pitches.sorted()[pitches.count / 2]
+        return median >= 60 ? .treble : median >= 50 ? .treble8vb : .bass
+    }
+}
+
 public struct MusicalEvent: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var onset: Beat
     public var duration: Beat
     public var measureID: UUID?
     public var content: EventContent
-    public init(id: UUID = UUID(), onset: Beat, duration: Beat, measureID: UUID? = nil, content: EventContent) {
+    /// Required from schemaVersion 2: the voice part this note or rest belongs to.
+    public var partID: UUID?
+    public init(id: UUID = UUID(), onset: Beat, duration: Beat, measureID: UUID? = nil, content: EventContent, partID: UUID? = nil) {
         self.id = id; self.onset = onset; self.duration = duration; self.measureID = measureID; self.content = content
+        self.partID = partID
     }
     public var note: Note? { if case .note(let note) = content { note } else { nil } }
     public var range: BeatRange { get throws { try BeatRange(start: onset, end: onset.adding(duration)) } }
@@ -75,13 +103,43 @@ public struct MusicSpan: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// A voice part (for example soprano, or the single melody of a solo song). Parts share the
+/// document's measures, tempo and meter; they are synchronised by Beat, never by recording time.
+public struct Part: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var abbreviation: String
+    public var clef: Clef
+    /// The phrases this part sings, in order (repeats allowed). nil means every phrase in document order.
+    public var phraseIDs: [UUID]?
+    public init(id: UUID = UUID(), name: String, abbreviation: String = "", clef: Clef = .treble, phraseIDs: [UUID]? = nil) {
+        self.id = id; self.name = name; self.abbreviation = abbreviation; self.clef = clef; self.phraseIDs = phraseIDs
+    }
+}
+
 public struct Music: Codable, Equatable, Sendable {
     public var measures: [Measure] = []
     public var events: [MusicalEvent] = []
     public var tempos: [Tempo] = [.init(bpm: 88)]
     public var meters: [Meter] = [.init()]
     public var spans: [MusicSpan] = []
+    public var parts: [Part] = []
     public init() {}
+
+    private enum CodingKeys: String, CodingKey { case measures, events, tempos, meters, spans, parts }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        measures = try c.decode([Measure].self, forKey: .measures)
+        events = try c.decode([MusicalEvent].self, forKey: .events)
+        tempos = try c.decode([Tempo].self, forKey: .tempos)
+        meters = try c.decode([Meter].self, forKey: .meters)
+        spans = try c.decode([MusicSpan].self, forKey: .spans)
+        // Absent in schemaVersion 1; the document migration creates them.
+        parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
+    }
+
+    public func part(_ id: UUID?) -> Part? { parts.first { $0.id == id } }
+    public func events(in partID: UUID) -> [MusicalEvent] { events.filter { $0.partID == partID } }
 }
 
 public struct LanguageTarget: Codable, Hashable, Sendable {

@@ -25,11 +25,21 @@ extension SongDocument {
         alignments.removeAll { $0.musicTargets.isEmpty }
     }
 
-    public mutating func align(syllableID: UUID, to eventIDs: [UUID]) throws {
+    /// Replaces the syllable's alignment within one part (the part of `eventIDs`, or `partID`).
+    /// Alignments of the same syllable in other parts are kept: each part sings its own timing.
+    public mutating func align(syllableID: UUID, to eventIDs: [UUID], inPart partID: UUID? = nil) throws {
         guard syllable(syllableID) != nil else { throw SongError.invalid("音節が見つかりません。") }
         let target = LanguageTarget(.syllable, syllableID)
+        let scope = partID ?? eventIDs.first.flatMap { event($0)?.partID }
+        func inScope(_ alignment: Alignment) -> Bool {
+            guard let scope else { return true }
+            return alignment.musicTargets.contains { destination in
+                if case .event(let id, _) = destination { return event(id)?.partID == scope }
+                return false
+            }
+        }
         // Keep the other language targets of a many-to-many alignment intact.
-        for i in alignments.indices { alignments[i].languageTargets.removeAll { $0 == target } }
+        for i in alignments.indices where inScope(alignments[i]) { alignments[i].languageTargets.removeAll { $0 == target } }
         alignments.removeAll { $0.languageTargets.isEmpty }
         if !eventIDs.isEmpty {
             alignments.append(.init(languageTargets: [target], musicTargets: eventIDs.map { .event($0) }, relation: .manual, userEdited: true))

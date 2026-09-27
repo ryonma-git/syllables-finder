@@ -33,10 +33,16 @@ struct SingingView: View {
                             LazyVStack(alignment: .leading, spacing: 16) {
                                 ForEach(rows.indices, id: \.self) { index in
                                     if session.singingLayout == .overview || index == session.detailIndex {
-                                        SingingTimelineRow(song: song, measures: rows[index],
-                                                           scale: session.singingLayout == .detail ? 120 : Self.overviewScale,
-                                                           session: session, onMeasureTap: selectMeasure, seek: seek)
-                                            .id(index)
+                                        let scale = session.singingLayout == .detail ? 120 : Self.overviewScale
+                                        if session.pitchDisplay == .staff && ScoreRow.issue(song: song, measures: rows[index]) == nil {
+                                            ScoreRow(song: song, measures: rows[index], scale: scale,
+                                                     session: session, onMeasureTap: selectMeasure, seek: seek)
+                                                .id(index)
+                                        } else {
+                                            SingingTimelineRow(song: song, measures: rows[index], scale: scale,
+                                                               session: session, onMeasureTap: selectMeasure, seek: seek)
+                                                .id(index)
+                                        }
                                     }
                                 }
                             }.padding(.horizontal, 18).padding(.bottom, 24)
@@ -71,7 +77,8 @@ struct SingingView: View {
             guard let first = group.first, let last = group.last else { continue }
             quarters = max(quarters, last.range.end.doubleValue - first.range.start.doubleValue)
         }
-        let rowChrome = 58.0 + 16 + 36          // keyboard column, row trailing space, list padding
+        let leading = session.pitchDisplay == .staff ? ScoreRow.leftMargin(song: song, scale: Self.overviewScale) : 58.0
+        let rowChrome = leading + 16 + 36       // keyboard or clef column, row trailing space, list padding
         return availableWidth >= rowChrome + quarters * Self.overviewScale ? 4 : 2
     }
 
@@ -225,16 +232,9 @@ private struct SingingTimelineRow: View {
                 }
             }
             lyrics
-            if session.pitchDisplay == .pianoRoll { pianoRoll }
-            else if let issue = NotationProjection(song: song, measures: measures).issue {
-                pianoRoll
-                Text(issue).font(.caption).foregroundStyle(.orange).offset(x: left, y: height - 24)
-            } else {
-                StaffRow(song: song, measures: measures, scale: scale, left: left, top: pianoTop,
-                         width: width, height: max(pianoHeight, 165), session: session)
-                if let notice = NotationProjection(song: song, measures: measures).notice {
-                    Text(notice).font(.caption).foregroundStyle(.orange).offset(x: left, y: height - 24)
-                }
+            pianoRoll
+            if session.pitchDisplay == .staff, let issue = ScoreRow.issue(song: song, measures: measures) {
+                Text("\(issue)").font(.caption).foregroundStyle(.orange).offset(x: left, y: height - 24)
             }
             if start <= session.position && session.position <= end {
                 Rectangle().fill(Color.teal).frame(width: 2, height: height - 25)
@@ -339,153 +339,6 @@ private struct SingingTimelineRow: View {
     }
 }
 
-private struct StaffRow: View {
-    let song: SongDocument
-    let measures: [MeasureSlice]
-    let scale: Double
-    let left: Double
-    let top: Double
-    let width: Double
-    let height: Double
-    @ObservedObject var session: WorkspaceSession
-    private var start: Double { measures.first?.range.start.doubleValue ?? 0 }
-    private var projection: NotationProjection { NotationProjection(song: song, measures: measures) }
-    private func x(_ beat: Double) -> Double { left + (beat - start) * scale }
-    private func y(_ step: Int) -> Double { top + 100 - Double(step) * 9 }
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(0..<5, id: \.self) { line in
-                Rectangle().fill(Color.primary.opacity(0.5)).frame(width: width - 14, height: 1)
-                    .offset(x: 6, y: top + 100 - Double(line) * 18)
-            }
-            Text("𝄞").font(.system(size: 56)).offset(x: 7, y: top + 11)
-                .accessibilityLabel("ト音記号")
-            ForEach(measures) { measure in
-                if let meter = song.music.meters.last(where: { $0.onset <= measure.range.start }) {
-                    if measure.id == measures.first?.id {
-                        VStack(spacing: -5) {
-                            Text("\(meter.numerator)")
-                            Text("\(meter.denominator)")
-                        }.font(.system(size: 15, weight: .bold, design: .serif))
-                            .frame(width: 22).offset(x: left - 25, y: top + 41)
-                            .accessibilityLabel("拍子 \(meter.numerator)/\(meter.denominator)")
-                    } else if meter.onset == measure.range.start {
-                        Text("\(meter.numerator)/\(meter.denominator)")
-                            .font(.caption.monospacedDigit().weight(.semibold))
-                            .padding(.horizontal, 4).padding(.vertical, 2)
-                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 3))
-                            .offset(x: x(measure.range.start.doubleValue) + 4, y: top + 4)
-                            .accessibilityLabel("拍子変更 \(meter.numerator)/\(meter.denominator)")
-                    }
-                }
-            }
-            ForEach(Array(projection.pieces.enumerated()), id: \.offset) { _, piece in
-                let noteX = x(piece.start) + 8
-                let noteY = y(piece.step ?? 0)
-                if let step = piece.step {
-                    if step <= -2 {
-                        ForEach(1...max(1, (-step) / 2), id: \.self) { line in
-                            Rectangle().fill(Color.primary).frame(width: 24, height: 1)
-                                .offset(x: noteX - 4, y: y(-line * 2))
-                        }
-                    }
-                    if step >= 10 {
-                        ForEach(1...max(1, (step - 8) / 2), id: \.self) { line in
-                            Rectangle().fill(Color.primary).frame(width: 24, height: 1)
-                                .offset(x: noteX - 4, y: y(8 + line * 2))
-                        }
-                    }
-                }
-                if let accidental = piece.accidental {
-                    Text(accidental).font(.system(size: 20)).offset(x: noteX - 17, y: noteY - 16)
-                }
-                if piece.pitch != nil {
-                    Button {
-                        session.eventID = piece.eventID; session.showNotes = true
-                        if let id = piece.eventID,
-                           let phrase = song.phrases.first(where: { $0.musicalEventIDs.contains(id) }) {
-                            session.phraseID = phrase.id
-                        }
-                    } label: {
-                        Ellipse().fill(piece.duration >= 2 ? Color(nsColor: .controlBackgroundColor) : .primary)
-                            .frame(width: 15, height: 10)
-                            .overlay(Ellipse().stroke(Color.primary, lineWidth: 1.3))
-                    }.buttonStyle(.plain).offset(x: noteX, y: noteY - 5)
-                        .accessibilityLabel("音符 \(Note(pitch: piece.pitch!).name)、\(piece.duration)拍")
-                    if piece.duration < 4 {
-                        let stemUp = (piece.step ?? 0) < 4
-                        Rectangle().fill(Color.primary).frame(width: 1.5, height: 34)
-                            .offset(x: noteX + (stemUp ? 13 : 1), y: noteY + (stemUp ? -32 : 2))
-                        if piece.duration < 1 {
-                            Text(piece.duration < 0.5 ? "♬" : "♪").font(.system(size: 14))
-                                .offset(x: noteX + (stemUp ? 12 : -5), y: noteY + (stemUp ? -40 : 24))
-                        }
-                    }
-                    if piece.tiedTo {
-                        Path { path in
-                            let begin = CGPoint(x: noteX + 13, y: noteY + 10)
-                            let finish = CGPoint(x: min(width - 5, noteX + max(24, piece.duration * scale - 2)), y: noteY + 10)
-                            path.move(to: begin)
-                            path.addQuadCurve(to: finish, control: CGPoint(x: (begin.x + finish.x) / 2, y: noteY + 20))
-                        }.stroke(Color.primary, lineWidth: 1).allowsHitTesting(false)
-                    }
-                    if piece.tiedFrom && piece.start == start {
-                        Path { path in
-                            path.move(to: CGPoint(x: noteX - 13, y: noteY + 10))
-                            path.addQuadCurve(to: CGPoint(x: noteX + 2, y: noteY + 10),
-                                              control: CGPoint(x: noteX - 5, y: noteY + 19))
-                        }.stroke(Color.primary, lineWidth: 1).allowsHitTesting(false)
-                    }
-                } else {
-                    StaffRest(duration: piece.duration).offset(x: noteX - 4, y: top + 44)
-                        .accessibilityLabel("休符 \(piece.duration)拍")
-                }
-                if piece.pitch != nil && [3.0, 1.5, 0.75, 0.375].contains(piece.duration) {
-                    Circle().fill(Color.primary).frame(width: 3, height: 3).offset(x: noteX + 20, y: noteY)
-                }
-            }
-            Text("五線譜 · 音名は音符を選ぶと確認できます")
-                .font(.caption2).foregroundStyle(.secondary).offset(x: left, y: top + height - 21)
-        }
-    }
-
-}
-
-private struct StaffRest: View {
-    let duration: Double
-
-    var body: some View {
-        Canvas { context, _ in
-            var mark = Path()
-            if duration >= 2 {
-                // Whole and half rests hang from or sit on a staff line.
-                let y = duration >= 4 ? 21.0 : 17.0
-                mark.addRect(CGRect(x: 5, y: y, width: 13, height: 5))
-            } else if duration >= 1 {
-                mark.move(to: CGPoint(x: 12, y: 3))
-                mark.addLine(to: CGPoint(x: 18, y: 13))
-                mark.addLine(to: CGPoint(x: 10, y: 20))
-                mark.addLine(to: CGPoint(x: 17, y: 29))
-                mark.addLine(to: CGPoint(x: 8, y: 36))
-            } else {
-                mark.move(to: CGPoint(x: 15, y: 5))
-                mark.addLine(to: CGPoint(x: 10, y: 35))
-                mark.move(to: CGPoint(x: 15, y: 11))
-                mark.addQuadCurve(to: CGPoint(x: 18, y: 18), control: CGPoint(x: 28, y: 9))
-                if duration < 0.5 {
-                    mark.move(to: CGPoint(x: 13, y: 20))
-                    mark.addQuadCurve(to: CGPoint(x: 16, y: 27), control: CGPoint(x: 26, y: 18))
-                }
-            }
-            context.stroke(mark, with: .foreground, style: StrokeStyle(lineWidth: duration >= 2 ? 1 : 2.5, lineCap: .round, lineJoin: .round))
-            if [3.0, 1.5, 0.75, 0.375].contains(duration) {
-                context.fill(Path(ellipseIn: CGRect(x: 23, y: 19, width: 3, height: 3)), with: .foreground)
-            }
-        }.frame(width: 28, height: 40)
-    }
-}
-
 struct NoteEditor: View {
     let song: SongDocument
     let phrase: Phrase
@@ -560,7 +413,9 @@ struct NoteEditor: View {
             let onset = range.start
             let length = try Beat.grid(min(1, range.length))
             let measure = doc.music.measures.first { $0.range.start <= onset && onset < $0.range.end }?.id
-            doc.music.events.append(.init(id: id, onset: onset, duration: length, measureID: measure, content: .note(.init(pitch: 60))))
+            doc.ensureParts()
+            let part = doc.music.part(session.partID)?.id ?? doc.music.parts[0].id
+            doc.music.events.append(.init(id: id, onset: onset, duration: length, measureID: measure, content: .note(.init(pitch: 60)), partID: part))
             if let index = doc.phrases.firstIndex(where: { $0.id == phrase.id }) { doc.phrases[index].musicalEventIDs.append(id) }
         }
         if song.event(id) != nil { session.eventID = id }

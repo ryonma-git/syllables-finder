@@ -1,7 +1,7 @@
 import Foundation
 
 public struct FieldSource: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case manual, sample, ai, dictionary, imported }
+    public enum Kind: String, Codable, Sendable { case manual, sample, ai, dictionary, imported, rule }
     public var kind: Kind
     public var provider: String?
     public var model: String?
@@ -58,6 +58,8 @@ public struct Phrase: Codable, Equatable, Identifiable, Sendable {
     public var timeRange: BeatRange?
     public var musicalEventIDs: [UUID]
     public var structureUserEdited = false
+    /// BCP 47 language of this line; nil means the document's source language.
+    public var language: String?
     public init(id: UUID = UUID(), originalText: String, translation: String = "", wordIDs: [UUID] = [],
                 timeRange: BeatRange? = nil, musicalEventIDs: [UUID] = []) {
         self.id = id; self.originalText = originalText; self.translation = .init(translation)

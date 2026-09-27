@@ -17,6 +17,8 @@ final class WorkspaceSession: ObservableObject {
     @Published var wordID: UUID?
     @Published var syllableID: UUID?
     @Published var eventID: UUID?
+    /// The part that note entry and alignment act on; nil means the first part.
+    @Published var partID: UUID?
     @Published var showInspector = false
     @Published var showNotes = false
     @Published var guideState = GuideState.stopped
@@ -128,6 +130,12 @@ struct WorkspaceView: View {
             }
         }
         .onAppear {
+            // Screen QA without UI scripting: `-SingingWorkspaceQA staff|roll|detail-staff`.
+            if let qa = UserDefaults.standard.string(forKey: "SingingWorkspaceQA") {
+                session.mode = .singing
+                session.pitchDisplay = qa.hasSuffix("roll") ? .pianoRoll : .staff
+                session.singingLayout = qa.hasPrefix("detail") ? .detail : .overview
+            }
             if session.phraseID == nil, let phrase { session.select(phrase) }
             session.bpm = song.music.tempos.first?.bpm ?? 88
             if session.practiceRange == nil {
