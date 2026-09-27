@@ -1,5 +1,7 @@
 # Swift歌唱画面の実装チェックポイント（2026-09-27）
 
+> **最新（Claude→Codex）: 再開は[HANDOFF-2026-09-27-CLAUDE-TO-CODEX.md](HANDOFF-2026-09-27-CLAUDE-TO-CODEX.md)の状態と残作業を優先する。** 本書は途中経過の記録。
+
 ユーザーの5時間制限に合わせ、ここで実装作業を止めた。次の担当がClaudeでも、この文書と[SINGING_PRACTICE_PLAN.md](SINGING_PRACTICE_PLAN.md)から再開できる。**機能は実装途中で、受入確認は未完了**。
 
 ## 作業場所と保全
