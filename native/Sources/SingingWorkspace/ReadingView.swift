@@ -17,7 +17,7 @@ struct ReadingView: View {
             }.padding(.horizontal, 30).padding(.bottom, 30)
             VStack(alignment: .leading, spacing: 8) {
                 Label("読む → たしかめる → 歌う", systemImage: "leaf").font(.callout.weight(.medium)).foregroundStyle(.teal)
-                Text("まず意味をつかみ、IPAと読みを見比べましょう。\n「歌う」に切り替えると、音節をのせる場所が見えます。")
+                Text("まず意味と音節を確かめましょう。IPAや読みは単語の詳細で追加できます。\n「歌う」に切り替えると、音節をのせる場所が見えます。")
                     .font(.callout).foregroundStyle(.secondary).lineSpacing(5)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
                 .background(Color.teal.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
@@ -40,9 +40,12 @@ struct WordCell: View {
                 if word.contextualMeaning.userEdited { Image(systemName: "pencil").font(.caption2).foregroundStyle(.secondary) }
             }
             Text(word.surface).font(.system(size: 27 * scale, weight: .semibold, design: .serif)).foregroundStyle(.primary)
-            Text(syllables.isEmpty ? "発音は未設定" : "/" + syllables.map(\.ipa.value).joined(separator: ".") + "/")
+            Text(syllables.allSatisfy { $0.ipa.value.isEmpty } ? "IPAは未設定" :
+                 "/" + syllables.map { $0.ipa.value.isEmpty ? "?" : $0.ipa.value }.joined(separator: ".") + "/")
                 .font(.system(size: 17 * scale)).foregroundStyle(.secondary)
-            Text(syllables.map(\.reading.value).joined()).font(.system(size: 14 * scale)).foregroundStyle(.secondary)
+            if !syllables.allSatisfy({ $0.reading.value.isEmpty }) {
+                Text(syllables.map(\.reading.value).joined()).font(.system(size: 14 * scale)).foregroundStyle(.secondary)
+            }
             Divider().padding(.top, 5)
             HStack(spacing: 7) {
                 ForEach(syllables) { syllable in

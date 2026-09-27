@@ -236,6 +236,8 @@ index の数え方（`journey` の例）:
 
 SwiftUIで作る新アプリの基盤は [`native/`](native/) にあります。現行の母音核教材アプリは上記の方法で引き続き起動できます。新アプリの設計正本は [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) から始まる8文書、進捗と検証結果は [`docs/WORK_LOG.md`](docs/WORK_LOG.md) です。
 
-macOSの開発用実行は `native/新アプリを起動.command` をダブルクリックします。Command Line ToolsとSwift 6が必要です。シェルからは `native/scripts/build-app.sh`、`native/scripts/swift-tool.sh test` を使います。アプリは新規文書から練習サンプルを開くか、自分の歌詞を追加できます。`.songproj`を保存すると言語と音楽の編集内容が残ります。開発用のサンプル文書が必要なら `native/scripts/swift-tool.sh build` の後に、ビルドされた `SongSampleTool /tmp/Practice.songproj` で生成できます。既存ファイルは上書きしません。
+macOSの開発用実行は `native/新アプリを起動.command` をダブルクリックします。Command Line ToolsとSwift 6が必要です。シェルからは `native/scripts/build-app.sh`、`native/scripts/swift-tool.sh test` を使います。アプリは新規文書から「きらきら星」または短い練習サンプルを開くか、自分の歌詞を追加できます。`.songproj`を保存すると言語と音楽の編集内容が残ります。開発用のサンプル文書が必要なら `native/scripts/swift-tool.sh build` の後に、ビルドされた `SongSampleTool /tmp/Practice.songproj`、または `SongSampleTool --twinkle /tmp/Twinkle.songproj` で生成できます。後者は `source/Twinkle.mid` を同梱します。既存ファイルは上書きしません。
 
-現在動く範囲はReading、歌詞と音符の対応表示、音節の対応変更、音符の基本数値編集、無音の位置プレビュー、Mock意味解析とOllamaへの任意接続です。MIDI/MusicXML入出力、実音再生、Apple Foundation Models、cloud AI、A4出力はまだ実装していません。Ollamaは利用者がローカルで起動し、明示してモデルを選んだときだけ利用します。UIから有料APIは呼び出しません。
+現在動く範囲はReading、歌詞と音符の対応表示、音節の対応変更、音符の基本数値編集、単旋律のガイド音再生、Mock意味解析とOllamaへの任意接続です。きらきら星は6行・42音節を42音符へ対応させた第1節で、旋律はハ長調の簡易版です。歌声合成、一般的なMIDI/MusicXML入出力、Apple Foundation Models、cloud AI、A4出力はまだ実装していません。Ollamaは利用者がローカルで起動し、明示してモデルを選んだときだけ利用します。UIから有料APIは呼び出しません。
+
+「きらきら星」の歌詞はJane Taylor『The Star』（1806）、旋律は伝承曲『Ah! vous dirai-je, maman』に由来します。[1806年版の所蔵情報](https://www.themorgan.org/music-manuscripts-and-printed-music/85839)、[1840年の歌詞付き楽譜](https://imslp.org/wiki/The_Little_Songster_(Webb,_George_James))を確認しました。MIDIは外部ファイルの転載ではなく、このアプリの音符データから生成します。

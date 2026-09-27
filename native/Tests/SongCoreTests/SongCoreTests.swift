@@ -11,6 +11,28 @@ struct SongCoreTests {
         #expect(doc.syllables.first?.text.value == "Morn")
     }
 
+    @Test func testTwinkleSampleHasOneNoteForEverySungSyllable() throws {
+        let doc = TwinkleSample.make()
+        try doc.validate()
+        #expect(doc == TwinkleSample.make())
+        #expect(try SongDocument.decode(doc.encoded()) == doc)
+        #expect(doc.phrases.count == 6)
+        #expect(doc.syllables.count == 42)
+        #expect(doc.music.events.count == 42)
+        #expect(doc.alignments.count == 42)
+        #expect(doc.phrases[0].originalText == "Twinkle, twinkle, little star,")
+        #expect(doc.music.events.prefix(7).compactMap { $0.note?.pitch } == [60, 60, 67, 67, 69, 69, 67])
+        for alignment in doc.alignments {
+            #expect(alignment.languageTargets.count == 1)
+            #expect(alignment.musicTargets.count == 1)
+            #expect(doc.ranges(for: alignment.languageTargets[0]).count == 1)
+        }
+        let midi = try SampleMIDI.encode(doc)
+        #expect(Array(midi.prefix(4)) == Array("MThd".utf8))
+        #expect(Array(midi.dropFirst(14).prefix(4)) == Array("MTrk".utf8))
+        #expect(midi.count > 300)
+    }
+
     @Test func testFutureSchemaRejectedBeforeBodyDecode() {
         #expect(throws: SongError.unsupportedVersion(999)) { try SongDocument.decode(Data("{\"schemaVersion\":999}".utf8)) }
     }

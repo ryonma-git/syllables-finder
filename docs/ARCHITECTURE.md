@@ -8,7 +8,7 @@
 - SongCore: Codable 値型、参照検証、時間、編集 transaction、サンプル。UI/AI SDK 非依存。
 - SongServices: AIProvider / LinguisticAnalysisService、候補の検証・保護 merge、I/O adapter 境界。
 - SingingWorkspace: SwiftUI DocumentGroup / FileDocument、画面、UndoManager、選択・transport。
-- platform adapters（後続）: CoreMIDI、AVFoundation、FoundationModels、Keychain、印刷。
+- platform adapters: AVFoundation単旋律ガイド音はUI targetに追加済み。CoreMIDI、FoundationModels、Keychain、印刷は後続。
 
 SongDocument だけが曲の SSOT。選択、再生位置、zoom、pane表示、解析中フラグは session state。
 FileDocument は package の `document.json` と原資料を所有。package のその他の子要素も保存時に保持する。
@@ -37,7 +37,7 @@ package の不明な regular file/directory は保持、symlink は安全性の�
 Reading は LazyVGrid、Singing は選択 Phrase のみ表示。全曲の巨大 Canvas は作らない。
 初回UIは128拍を超える単一Phraseを表示せず、分割viewportは後続工程。
 playhead は派生した時間表示で、document を毎フレーム更新しない。
-最初の視覚 transport は monotonic clock。実音追加時には audio host clock を唯一の再生時計にする。
+初回は無音の視覚 transport。単旋律ガイド音の追加後はAVAudioPlayerNodeのsample timeから再生位置を派生し、画面側の独立時計を持たない。
 
 ## 根拠
 

@@ -1,5 +1,13 @@
 # 作業記録 — 2026-09-27
 
+## 追加作業: GitHub公開ミラーと既知の歌のサンプル
+
+- 公開GitHub `ryonma-git/syllables-finder` を作成。Inagawaのcanonicalを`origin`に保ち、`github` remoteへ`main`、`sheet-design-pdf`、`codex/native-singing-foundation`を初回pushした。`main`へのSwift版採用は行っていない。
+- Jane Taylor『The Star』（1806）と伝承曲『Ah! vous dirai-je, maman』を根拠に、きらきら星の第1節6行を追加。42音節をハ長調の42音符に1対1で対応。現代の録音・第三者MIDIは使用していない。
+- 新規文書からきらきら星サンプルを選べるようにし、`.songproj`サンプル生成時に自作SMF format 0の`source/Twinkle.mid`を添付。単旋律のガイド音はAVAudioEngineで生成し、歌声は生成しない。
+- Swiftのbuild/testは追加テストを含めSongCore 13件、SongServices 4件が成功。MIDIを実際に生成し、42 note-on/off、48拍、96 BPM、ヘッダー/トラック長を独立パーサーで確認。既存Python12例・23件成功。
+- 別インスタンスの実画面で新規画面のサンプル選択、日本語訳、ReadingとSingingの音節・音符対応、再生ボタンと位置の進行・停止を確認。スピーカーからの出音はこの操作環境で聴取できず、音量・音質・同期精度は利用者の実聴確認が必要。
+
 ## 到達点
 
 既存Python/Tk教材アプリを調査し、変更せず保持。Swift 6 / SwiftUI の新アプリを `native/` に併設。

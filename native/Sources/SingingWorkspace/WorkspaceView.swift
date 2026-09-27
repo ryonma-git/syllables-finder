@@ -19,6 +19,7 @@ final class WorkspaceSession: ObservableObject {
     @Published var bpm = 88.0
     @Published var error: String?
     @Published var textScale = 1.0
+    let guide = GuideTonePlayer()
 
     func replace(_ next: SongDocument, in binding: Binding<SongFile>, undo: UndoManager?, name: String) {
         let previous = binding.wrappedValue.song
@@ -34,7 +35,7 @@ final class WorkspaceSession: ObservableObject {
     }
     func select(_ phrase: Phrase) {
         phraseID = phrase.id; wordID = nil; syllableID = nil; eventID = nil
-        isPlaying = false; position = phrase.timeRange?.start.doubleValue ?? 0
+        isPlaying = false; guide.stop(); position = phrase.timeRange?.start.doubleValue ?? 0
     }
 }
 
@@ -108,26 +109,29 @@ struct WorkspaceView: View {
             if session.phraseID == nil, let phrase { session.select(phrase) }
             session.bpm = song.music.tempos.first?.bpm ?? 88
         }
-        .onChange(of: session.mode) { _, _ in session.isPlaying = false }
+        .onChange(of: session.mode) { _, _ in stopPlayback() }
+        .onChange(of: session.bpm) { _, _ in
+            if session.isPlaying, let phrase { startGuide(phrase) }
+        }
         .onChange(of: song.revision) { _, _ in
             if let id = session.eventID, song.event(id) == nil { session.eventID = nil }
             if let id = session.wordID, song.word(id) == nil { session.wordID = nil }
+            if session.isPlaying, let phrase { startGuide(phrase) }
         }
         .task(id: session.isPlaying) {
-            guard session.isPlaying, let range = phrase?.timeRange else { return }
-            var last = ProcessInfo.processInfo.systemUptime
+            guard session.isPlaying, let phrase, let range = phrase.timeRange else { return }
             while !Task.isCancelled && session.isPlaying {
                 do { try await Task.sleep(for: .milliseconds(33)) } catch { return }
-                let now = ProcessInfo.processInfo.systemUptime
-                session.position += (now - last) * session.bpm / 60
-                last = now
+                if let position = session.guide.position { session.position = position }
                 if session.position >= range.end.doubleValue {
-                    if session.loop { session.position = range.start.doubleValue + (session.position - range.start.doubleValue).truncatingRemainder(dividingBy: range.length) }
-                    else { session.position = range.end.doubleValue; session.isPlaying = false }
+                    if session.loop {
+                        session.position = range.start.doubleValue + (session.position - range.start.doubleValue).truncatingRemainder(dividingBy: range.length)
+                        startGuide(phrase)
+                    } else { session.position = range.end.doubleValue; stopPlayback() }
                 }
             }
         }
-        .onDisappear { session.isPlaying = false }
+        .onDisappear { stopPlayback() }
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
         .sheet(isPresented: $showAnalysis) {
             if let phrase {
@@ -204,10 +208,11 @@ struct WorkspaceView: View {
         HStack(spacing: 18) {
             Button {
                 if let range = phrase.timeRange, session.position >= range.end.doubleValue { session.position = range.start.doubleValue }
-                session.isPlaying.toggle()
+                if session.isPlaying { stopPlayback() }
+                else { startGuide(phrase) }
             } label: { Image(systemName: session.isPlaying ? "pause.fill" : "play.fill").frame(width: 22, height: 22) }
-                .buttonStyle(.borderedProminent).accessibilityLabel(session.isPlaying ? "一時停止" : "位置プレビューを再生").disabled(phrase.timeRange == nil)
-            Button { session.isPlaying = false; session.position = phrase.timeRange?.start.doubleValue ?? 0
+                .buttonStyle(.borderedProminent).accessibilityLabel(session.isPlaying ? "一時停止" : "ガイド音を再生").disabled(phrase.timeRange == nil)
+            Button { stopPlayback(); session.position = phrase.timeRange?.start.doubleValue ?? 0
             } label: { Image(systemName: "stop.fill") }.buttonStyle(.borderless).accessibilityLabel("停止")
             Toggle(isOn: $session.loop) { Label("このフレーズをループ", systemImage: "repeat") }.toggleStyle(.button).font(.caption)
             Spacer(minLength: 8)
@@ -217,7 +222,7 @@ struct WorkspaceView: View {
             }
             VStack(alignment: .trailing, spacing: 4) {
                 Text(String(format: "%.1f 拍", session.position + 1)).monospacedDigit()
-                Text("位置プレビュー・音は出ません").foregroundStyle(.secondary)
+                Text("ガイド音のみ再生・歌声は出ません").foregroundStyle(.secondary)
             }.font(.caption)
         }.padding(18)
     }
@@ -227,10 +232,10 @@ struct WorkspaceView: View {
             Image(systemName: "text.word.spacing").font(.system(size: 48, weight: .light)).foregroundStyle(.teal)
             Text("ことばを知る。\n歌う場所が見えてくる。").font(.system(size: 30, weight: .medium, design: .serif)).multilineTextAlignment(.center)
             Text("意味と発音を読み、音節と音符をつなぐ練習帳です。").foregroundStyle(.secondary)
-            Button("練習サンプルを開く") {
-                session.replace(SampleSongDocument.make(), in: $file, undo: undoManager, name: "サンプルを読み込み")
-                if let first = file.song.phrases.first { session.select(first) }
-            }.buttonStyle(.borderedProminent).controlSize(.large)
+            Button("きらきら星のサンプルを開く") { openSample(TwinkleSample.make()) }
+                .buttonStyle(.borderedProminent).controlSize(.large)
+            Button("短い練習サンプルを開く") { openSample(SampleSongDocument.make()) }
+                .buttonStyle(.plain)
             Button("自分の歌詞で始める") { addingLyrics = true }.buttonStyle(.plain).foregroundStyle(.teal)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -257,6 +262,28 @@ struct WorkspaceView: View {
     private func mutate(_ name: String, _ mutation: (inout SongDocument) throws -> Void) {
         do { session.replace(try song.editing(mutation), in: $file, undo: undoManager, name: name) }
         catch { session.error = error.localizedDescription }
+    }
+
+    private func openSample(_ sample: SongDocument) {
+        stopPlayback()
+        session.replace(sample, in: $file, undo: undoManager, name: "サンプルを読み込み")
+        if let first = file.song.phrases.first { session.select(first) }
+        session.bpm = file.song.music.tempos.first?.bpm ?? 88
+    }
+
+    private func startGuide(_ phrase: Phrase) {
+        do {
+            try session.guide.play(song: song, phrase: phrase, fromBeat: session.position, bpm: session.bpm)
+            session.isPlaying = true
+        } catch {
+            stopPlayback()
+            session.error = "ガイド音を再生できませんでした: \(error.localizedDescription)"
+        }
+    }
+
+    private func stopPlayback() {
+        session.isPlaying = false
+        session.guide.stop()
     }
 }
 

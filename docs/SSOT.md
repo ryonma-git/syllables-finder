@@ -7,6 +7,7 @@
 | 今後のMBP / Ishibashi作業場所 | `/Users/ryon/Projects-Ishibashi/syllables-finder` |
 | Inagawaの正本 | `/Users/ryon/Git/remotes/syllables-finder.git` |
 | Inagawaの作業場所 | `/Users/ryon/Projects-Inagawa/syllables-finder` |
+| 公開GitHubミラー | `https://github.com/ryonma-git/syllables-finder` |
 | 移行前の保管用 | Ishibashi `/Users/ryon/Projects/syllables-finder` |
 
 今後Codexで改修する際は、上記の新しい作業場所をプロジェクトフォルダとして選びます。既に開いているタスクの作業場所が自動で切り替わることは前提にしません。アプリは新しいフォルダ内の `起動.command` をダブルクリックします。元のランチャーを開いた場合は、引き続き移行前のアプリが動きます。
@@ -16,6 +17,8 @@
 作業開始時にInagawaとの差分を確認し、安全に取り込める更新を取得します。各Macのファイルを編集し、テストしてcommitします。そのcommitをcanonicalへpushして、他のMacが続きを取得できる状態にします。ファイル保存だけ・commitだけではInagawaに反映されません。
 
 基本branchはmainです。同時に複数のMacでmainを進めて分岐した場合は、force pushせず履歴を比較します。コード変更をCodexに依頼した際の開始・終了手順は `AGENTS.md` に記載しています。通信できないときも手元で編集・commitでき、未push分は手元に保持します。
+
+2026-09-27からGitHubを公開ミラーに追加しました。`origin`は従来のcanonical、Inagawaの`github` remoteがGitHubを指します。Inagawaの作業コピーで検証・commitし、まずcanonicalへ通常push、同じcommitをGitHubへ通常pushします。作業branchを共有しただけの場合は、`main`に採用されたとは報告しません。
 
 ## 専用実行環境
 

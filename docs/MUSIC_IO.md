@@ -1,6 +1,7 @@
 # Music I/O
 
 MIDI/XML 双方向は完成MVPの要件。初回 vertical slice の保存形式は songproj のみ。
+2026-09-27のきらきら星サンプルでは、文書内の単旋律からSMF format 0を生成して`source/Twinkle.mid`へ添付する。任意ファイルのMIDI import/exportはまだ実装していない。
 import/export未実装を「対応」と表示しない。adapter は SongCore を返す。
 
 ## MIDI

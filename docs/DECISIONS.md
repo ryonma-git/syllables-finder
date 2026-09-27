@@ -53,6 +53,13 @@ native `.app` は署名なし配布向けではなく、ローカルで ad-hoc �
 初回Singingは128拍より長い単一Phraseの描画を保留し、空の画面で理由を表示。
 大曲のviewport virtualizationを後続で実装する。
 
+## 009 — 公開ミラーと伝承曲サンプル（2026-09-27）
+
+InagawaのcanonicalをSSOTとし、GitHubを公開ミラーとして追加。`origin`を変更しない。
+伝承曲の旋律とJane Taylorの1806年の歌詞から「Twinkle, Twinkle, Little Star」の短い第1節を教材サンプルにする。
+現代の録音や出所不明のMIDIを取り込まず、音符データから単旋律MIDIを生成する。
+単旋律ガイド音はAVAudioEngineで生成し、歌声合成と区別する。SMFの一般的なimport/export完了とは扱わない。
+
 ## 設計自己レビュー（実装前）
 
 - 階層: 混在音素を二重実体化せず親参照で一意化 → DATA_MODELへ反映。
