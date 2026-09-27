@@ -25,8 +25,13 @@ struct SingingView: View {
                     Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(.horizontal, 20)
                 }
                 if slices.isEmpty {
-                    ContentUnavailableView("音楽の時間軸はまだありません", systemImage: "music.note",
-                                           description: Text("歌詞と発音は「読む」で編集できます。"))
+                    ContentUnavailableView {
+                        Label("旋律はまだありません", systemImage: "music.note")
+                    } description: {
+                        Text("MIDI鍵盤か画面の鍵盤で旋律を入力し、歌詞を音符に割り当てられます。歌詞と発音は「読む」で編集できます。")
+                    } actions: {
+                        Button("旋律をステップ入力する") { session.showNotes = true; session.noteTool = .step }.buttonStyle(.borderedProminent)
+                    }
                 } else {
                     ScrollViewReader { reader in
                         ScrollView([.horizontal, .vertical]) {
@@ -104,6 +109,15 @@ struct SingingView: View {
                 Picker("音高", selection: $session.pitchDisplay) {
                     ForEach(PitchDisplay.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.segmented).frame(width: 230)
+                if song.music.parts.count > 1 {
+                    Picker("声部", selection: Binding(get: { song.music.part(session.partID)?.id ?? song.music.parts.first?.id },
+                                                     set: { session.partID = $0; session.stepCursor = nil })) {
+                        ForEach(song.music.parts) { Text($0.name).tag(Optional($0.id)) }
+                    }.frame(width: 170)
+                }
+                Button("声部…") { session.showingParts = true }
+                Button("歌詞を割り当てる…") { session.showingAlignment = true }
+                    .disabled(song.music.events.isEmpty || song.syllables.isEmpty)
                 Spacer(minLength: 0)
                 Toggle("読み", isOn: $session.showReading).toggleStyle(.checkbox)
                 Toggle("IPA", isOn: $session.showIPA).toggleStyle(.checkbox)
@@ -354,14 +368,18 @@ struct NoteEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("音符を編集", systemImage: "pianokeys").font(.headline)
+                Picker("音符の操作", selection: $session.noteTool) {
+                    ForEach(NoteTool.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().frame(width: 230)
                 Spacer()
                 if session.syllableID != nil {
                     Button("選んだ音節の対応を変更…") { showingAlignment = true }.font(.caption)
                 }
-                Button("音符を追加", systemImage: "plus") { addNote() }.font(.caption)
+                if session.noteTool == .edit { Button("音符を追加", systemImage: "plus") { addNote() }.font(.caption) }
             }
-            if let event, event.note != nil {
+            if session.noteTool == .step {
+                StepInputPanel(song: song, session: session, mutate: mutate)
+            } else if let event, event.note != nil {
                 HStack(alignment: .bottom, spacing: 15) {
                     numeric("音高 (MIDI)", value: $pitch)
                     decimal("開始 (拍)", value: $onset)

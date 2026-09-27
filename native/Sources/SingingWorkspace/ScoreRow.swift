@@ -197,17 +197,19 @@ struct ScoreRow: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(item.text).font(.custom(Self.lyricFont, size: lyricSize * item.fontScale)).fixedSize()
                         .frame(height: lyricSize, alignment: .bottom)
+                    // Missing values stay blank under the staff (the tooltip and VoiceOver still say so);
+                    // a placeholder per syllable would overlap on fast notes.
                     if session.showReading {
-                        Text(syllables.allSatisfy { $0.reading.value.isEmpty } ? "読み未設定" : reading)
-                            .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary).fixedSize()
+                        Text(syllables.allSatisfy { $0.reading.value.isEmpty } ? " " : reading)
+                            .font(.system(size: 11 * session.textScale * max(0.75, item.fontScale))).foregroundStyle(.secondary).fixedSize()
                     }
                     if session.showIPA {
-                        Text(ipa.isEmpty ? "IPA未設定" : "/\(ipa)/").font(.system(size: 10 * session.textScale))
+                        Text(ipa.isEmpty ? " " : "/\(ipa)/").font(.system(size: 10 * session.textScale * max(0.75, item.fontScale)))
                             .foregroundStyle(.secondary).fixedSize()
                     }
                 }
             }.buttonStyle(.plain).offset(x: item.x, y: block.lyricTop)
-                .accessibilityLabel("音節 \(item.text)、読み \(reading)")
+                .accessibilityLabel("音節 \(item.text)、読み \(syllables.allSatisfy { $0.reading.value.isEmpty } ? "未設定" : reading)")
                 .help(syllables.map { "\($0.text.value) · \($0.reading.value.isEmpty ? "読み未設定" : $0.reading.value)" }.joined(separator: " ／ "))
         }
     }

@@ -9,6 +9,7 @@ enum WorkspaceMode: String, CaseIterable { case reading = "読む", singing = "�
 enum SingingLayout: String, CaseIterable { case overview = "一覧", detail = "詳細" }
 enum PitchDisplay: String, CaseIterable { case pianoRoll = "ピアノロール", staff = "楽譜" }
 enum PlaybackScope: String, CaseIterable { case whole = "曲を通して", once = "選択範囲を1回", loop = "選択範囲をループ" }
+enum NoteTool: String, CaseIterable { case edit = "音符を編集", step = "ステップ入力" }
 
 @MainActor
 final class WorkspaceSession: ObservableObject {
@@ -19,6 +20,11 @@ final class WorkspaceSession: ObservableObject {
     @Published var eventID: UUID?
     /// The part that note entry and alignment act on; nil means the first part.
     @Published var partID: UUID?
+    @Published var noteTool = NoteTool.edit
+    /// Step entry position; nil continues after the part's last note.
+    @Published var stepCursor: Beat?
+    @Published var showingParts = false
+    @Published var showingAlignment = false
     @Published var showInspector = false
     @Published var showNotes = false
     @Published var guideState = GuideState.stopped
@@ -100,7 +106,8 @@ struct WorkspaceView: View {
                     }
                     if session.showNotes && session.mode == .singing {
                         Divider()
-                        NoteEditor(song: song, phrase: phrase, session: session, mutate: mutate).frame(height: 175)
+                        NoteEditor(song: song, phrase: phrase, session: session, mutate: mutate)
+                            .frame(height: session.noteTool == .step ? 215 : 175)
                     }
                     Divider()
                     transport()
@@ -123,6 +130,14 @@ struct WorkspaceView: View {
                 Menu {
                     Button("歌詞を追加…", systemImage: "text.badge.plus") { addingLyrics = true }
                     Button("意味を解析…", systemImage: "sparkles") { showAnalysis = true }.disabled(phrase == nil)
+                    Divider()
+                    Button("旋律をステップ入力…", systemImage: "pianokeys") {
+                        session.mode = .singing; session.showNotes = true; session.noteTool = .step
+                    }.disabled(phrase == nil)
+                    Button("歌詞を音符に割り当てる…", systemImage: "text.line.first.and.arrowtriangle.forward") { session.showingAlignment = true }
+                        .disabled(song.music.events.isEmpty || song.syllables.isEmpty)
+                    Button("声部…", systemImage: "person.3") { session.showingParts = true }
+                    Divider()
                     Button("未分割の単語を音節に分ける", systemImage: "scissors") {
                         mutate("未分割の単語を音節に分ける") { doc in
                             for id in doc.phrases.map(\.id) { doc.syllabifyUnsplitWords(phraseID: id) }
@@ -182,6 +197,12 @@ struct WorkspaceView: View {
         .onDisappear { stopPlayback() }
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
         .sheet(isPresented: $showingSamples) { samplePicker }
+        .sheet(isPresented: $session.showingParts) { PartsSheet(song: song, session: session, mutate: mutate) }
+        .sheet(isPresented: $session.showingAlignment) {
+            AlignmentProposalSheet(song: song, initialPartID: session.partID) { proposal in
+                mutate("歌詞を音符に割り当てる") { LyricAligner.apply(proposal, to: &$0) }
+            }
+        }
         .sheet(isPresented: $showAnalysis) {
             if let phrase {
                 AnalysisSheet(song: song, phrase: phrase, apply: { next in
