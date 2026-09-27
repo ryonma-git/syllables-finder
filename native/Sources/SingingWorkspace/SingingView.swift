@@ -14,8 +14,8 @@ struct SingingView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let columns = geometry.size.width >= 760 ? 4 : 2
             let slices = projection.slices
+            let columns = overviewColumns(slices: slices, availableWidth: geometry.size.width)
             let rows = session.singingLayout == .detail
                 ? projection.detailWindows
                 : stride(from: 0, to: slices.count, by: columns).map { Array(slices[$0..<min($0 + columns, slices.count)]) }
@@ -34,7 +34,7 @@ struct SingingView: View {
                                 ForEach(rows.indices, id: \.self) { index in
                                     if session.singingLayout == .overview || index == session.detailIndex {
                                         SingingTimelineRow(song: song, measures: rows[index],
-                                                           scale: session.singingLayout == .detail ? 120 : 54,
+                                                           scale: session.singingLayout == .detail ? 120 : Self.overviewScale,
                                                            session: session, onMeasureTap: selectMeasure, seek: seek)
                                             .id(index)
                                     }
@@ -61,6 +61,21 @@ struct SingingView: View {
             }
         }
     }
+
+    /// 4 measures per row only when a whole row of the widest 4 consecutive measures fits;
+    /// otherwise 2 (for example with the inspector open). Wider rows still scroll horizontally.
+    private func overviewColumns(slices: [MeasureSlice], availableWidth: Double) -> Int {
+        var quarters = 0.0
+        for index in slices.indices {
+            let group = slices[index..<min(index + 4, slices.count)]
+            guard let first = group.first, let last = group.last else { continue }
+            quarters = max(quarters, last.range.end.doubleValue - first.range.start.doubleValue)
+        }
+        let rowChrome = 58.0 + 16 + 36          // keyboard column, row trailing space, list padding
+        return availableWidth >= rowChrome + quarters * Self.overviewScale ? 4 : 2
+    }
+
+    static let overviewScale = 54.0
 
     private func follow(_ position: Double, columns: Int, reader: ScrollViewProxy) {
         guard session.followPlayback else { return }
