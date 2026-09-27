@@ -1,66 +1,133 @@
 import AVFoundation
 import SongCore
 
-/// Plays the document's guide notes as a plain sine tone. It does not synthesize a voice.
+enum GuideState: Equatable { case stopped, preparing, playing, paused, failed }
+
+/// The player sample clock is the only transport clock. UI timers only read it.
 @MainActor
 final class GuideTonePlayer {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
-    private let sampleRate = 44_100.0
-    private var startingBeat = 0.0
-    private var playbackBPM = 88.0
+    private let auditionNode = AVAudioPlayerNode()
+    private let format = AVAudioFormat(standardFormatWithSampleRate: GuidePCMRenderer.sampleRate, channels: 1)!
+    private var generation: UInt64 = 0
+    private var renderTask: Task<[Float], Error>?
+    private var plan: PlaybackPlan?
+    private var startingElapsed = 0.0
+    private var pausedPosition: Double?
+    private var loop = false
+    private(set) var state = GuideState.stopped
+    var onFinished: (@MainActor () -> Void)?
 
     init() {
         engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode,
-                       format: AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!)
+        engine.attach(auditionNode)
+        engine.connect(player, to: engine.mainMixerNode, format: format)
+        engine.connect(auditionNode, to: engine.mainMixerNode, format: format)
     }
 
-    func stop() { player.stop() }
+    func stop() {
+        generation &+= 1
+        renderTask?.cancel(); renderTask = nil
+        player.stop(); auditionNode.stop()
+        plan = nil; pausedPosition = nil; state = .stopped
+    }
+
+    func pause() {
+        guard state == .playing else { return }
+        pausedPosition = position
+        player.pause(); state = .paused
+    }
+
+    func resume() {
+        guard state == .paused else { return }
+        player.play(); pausedPosition = nil; state = .playing
+    }
 
     var position: Double? {
-        guard player.isPlaying, let renderTime = player.lastRenderTime,
+        if state == .paused { return pausedPosition }
+        guard state == .playing, let plan,
+              let renderTime = player.lastRenderTime,
               let playerTime = player.playerTime(forNodeTime: renderTime) else { return nil }
-        return startingBeat + Double(playerTime.sampleTime) / playerTime.sampleRate * playbackBPM / 60
+        let elapsed = startingElapsed + Double(playerTime.sampleTime) / playerTime.sampleRate
+        let inRange = loop ? elapsed.truncatingRemainder(dividingBy: plan.duration) : min(elapsed, plan.duration)
+        return plan.beat(at: inRange)
     }
 
-    func play(song: SongDocument, phrase: Phrase, fromBeat: Double, bpm: Double) throws {
-        guard let range = phrase.timeRange, bpm > 0 else { return }
-        let endBeat = range.end.doubleValue
-        guard fromBeat < endBeat else { return }
-        let secondsPerBeat = 60.0 / bpm
-        let frames = Int(ceil((endBeat - fromBeat) * secondsPerBeat * sampleRate))
-        guard frames > 0, frames <= Int(UInt32.max),
-              let buffer = AVAudioPCMBuffer(pcmFormat: player.outputFormat(forBus: 0),
-                                            frameCapacity: UInt32(frames)),
-              let output = buffer.floatChannelData?[0] else { return }
-        let notes = phrase.musicalEventIDs.compactMap { song.event($0) }
-            .compactMap { event -> (start: Double, end: Double, pitch: Int)? in
-                guard let note = event.note else { return nil }
-                return (event.onset.doubleValue,
-                        event.onset.doubleValue + event.duration.doubleValue, note.pitch)
-            }.sorted { $0.start < $1.start }
-        var index = 0
-        for frame in 0..<frames {
-            let beat = fromBeat + Double(frame) / sampleRate / secondsPerBeat
-            while index < notes.count && beat >= notes[index].end { index += 1 }
-            guard index < notes.count, beat >= notes[index].start else {
-                output[frame] = 0
-                continue
+    func play(song: SongDocument, range: BeatRange, fromBeat: Double, bpm: Double, loop: Bool) async throws {
+        stop()
+        let token = generation
+        state = .preparing
+        do {
+            let plan = try PlaybackPlan(song: song, range: range, practiceBPM: bpm)
+            let task = Task.detached(priority: .userInitiated) { try GuidePCMRenderer.render(plan) }
+            renderTask = task
+            let samples = try await task.value
+            guard generation == token else { throw CancellationError() }
+            renderTask = nil
+            let rangeStartSeconds = plan.tempo.seconds(at: range.start.doubleValue)
+            let offset = min(plan.duration, max(0, plan.tempo.seconds(at: fromBeat) - rangeStartSeconds))
+            let firstFrame = min(samples.count - 1, Int(floor(offset * GuidePCMRenderer.sampleRate)))
+            let first = try makeBuffer(Array(samples[firstFrame...]))
+            if !engine.isRunning { try engine.start() }
+            self.plan = plan; self.loop = loop
+            self.startingElapsed = Double(firstFrame) / GuidePCMRenderer.sampleRate
+            if loop {
+                // Resume the remainder once, then loop the entire range.
+                if firstFrame > 0 { player.scheduleBuffer(first, at: nil, options: [], completionHandler: nil) }
+                let whole = firstFrame > 0 ? try makeBuffer(samples) : first
+                player.scheduleBuffer(whole, at: nil, options: .loops, completionHandler: nil)
+            } else {
+                player.scheduleBuffer(first, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.generation == token else { return }
+                        self.state = .stopped
+                        self.onFinished?()
+                    }
+                }
             }
-            let note = notes[index]
-            let elapsed = (beat - note.start) * secondsPerBeat
-            let remaining = (note.end - beat) * secondsPerBeat
-            let envelope = min(1, elapsed / 0.012, remaining / 0.035)
-            let frequency = 440.0 * pow(2.0, Double(note.pitch - 69) / 12.0)
-            output[frame] = Float(0.22 * max(0, envelope) * sin(2 * .pi * frequency * elapsed))
+            player.play()
+            state = .playing
+        } catch {
+            if generation == token {
+                renderTask = nil; player.stop(); state = .failed
+            }
+            throw error
+        }
+    }
+
+    private func makeBuffer(_ samples: [Float]) throws -> AVAudioPCMBuffer {
+        guard samples.count <= Int(UInt32.max),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: UInt32(samples.count)),
+              let output = buffer.floatChannelData?[0] else {
+            throw SongError.invalid("音声の準備に失敗しました。")
+        }
+        samples.withUnsafeBufferPointer { source in
+            if let base = source.baseAddress { output.update(from: base, count: samples.count) }
+        }
+        buffer.frameLength = UInt32(samples.count)
+        return buffer
+    }
+
+    func audition(pitch: Int) {
+        guard (0...127).contains(pitch) else { return }
+        auditionNode.stop()
+        let frames = Int(0.32 * GuidePCMRenderer.sampleRate)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: UInt32(frames)),
+              let output = buffer.floatChannelData?[0] else { return }
+        let frequency = 440.0 * pow(2, Double(pitch - 69) / 12)
+        for frame in 0..<frames {
+            let time = Double(frame) / GuidePCMRenderer.sampleRate
+            let envelope = min(1, time / 0.008, (0.32 - time) / 0.025)
+            output[frame] = Float(0.13 * max(0, envelope) * sin(2 * .pi * frequency * time))
         }
         buffer.frameLength = UInt32(frames)
-        player.stop()
-        if !engine.isRunning { try engine.start() }
-        startingBeat = fromBeat
-        playbackBPM = bpm
-        player.scheduleBuffer(buffer)
-        player.play()
+        do {
+            if !engine.isRunning { try engine.start() }
+            auditionNode.scheduleBuffer(buffer, at: nil, options: [], completionHandler: nil)
+            auditionNode.play()
+        } catch { auditionNode.stop() }
     }
+
+    func stopAudition() { auditionNode.stop() }
 }

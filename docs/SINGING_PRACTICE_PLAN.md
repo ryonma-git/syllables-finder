@@ -1,7 +1,7 @@
 # 歌唱練習の表示・再生 — 実装引継ぎ
 
-2026-09-27 / Astra高による設計。基点 `30612b6`。**この文書の機能は実装前**。
-ユーザー指定により設計完了で一度止め、同じタスクをSol中へ切り替えて実装する。
+2026-09-27 / Astra高による設計。基点 `30612b6`。Sol中で初期実装を追加したが、**受入確認は未完了**。
+再開時は [IMPLEMENTATION_CHECKPOINT_2026-09-27.md](IMPLEMENTATION_CHECKPOINT_2026-09-27.md) の現状と残作業を先に読む。
 本書は次の実装範囲の詳細。全体要件は [REQUIREMENTS.md](REQUIREMENTS.md)、既存機能は [WORK_LOG.md](WORK_LOG.md)。
 
 ## 1. 今回の決定

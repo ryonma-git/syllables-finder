@@ -1,100 +1,409 @@
 import SwiftUI
 import SongCore
+import AppKit
 
 struct SingingView: View {
     let song: SongDocument
     let phrase: Phrase
     @ObservedObject var session: WorkspaceSession
-    private let unit = 145.0
-    private var range: BeatRange? { phrase.timeRange }
-    private var origin: Double { range?.start.doubleValue ?? 0 }
-    private var extent: Double { max(range?.length ?? 4, 1) }
-    private func x(_ beat: Double) -> Double { (beat - origin) * unit + 18 }
-    private var events: [MusicalEvent] { phrase.musicalEventIDs.compactMap { song.event($0) } }
+    let applyRange: (BeatRange) -> Void
+    let seek: (Double) -> Void
+
+    private var projection: MeasureProjection { MeasureProjection(song: song) }
 
     var body: some View {
-        if let range, range.length <= 128 {
-            ScrollView([.horizontal, .vertical]) {
-                VStack(alignment: .leading, spacing: 18) {
-                    timeline(range)
-                    HStack(spacing: 18) {
-                        Label("音節", systemImage: "rectangle.fill").foregroundStyle(.teal)
-                        Label("ガイド音符", systemImage: "music.note").foregroundStyle(.secondary)
-                        Spacer()
-                        Text("ひとつの音節に、複数の音符をつなげられます").foregroundStyle(.secondary)
-                    }.font(.caption)
-                }.padding(.horizontal, 30).padding(.bottom, 25)
+        GeometryReader { geometry in
+            let columns = geometry.size.width >= 760 ? 4 : 2
+            let slices = projection.slices
+            let rows = session.singingLayout == .detail
+                ? projection.detailWindows
+                : stride(from: 0, to: slices.count, by: columns).map { Array(slices[$0..<min($0 + columns, slices.count)]) }
+            VStack(alignment: .leading, spacing: 8) {
+                controls(slices: slices)
+                if let warning = projection.warning {
+                    Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(.horizontal, 20)
+                }
+                if slices.isEmpty {
+                    ContentUnavailableView("音楽の時間軸はまだありません", systemImage: "music.note",
+                                           description: Text("歌詞と発音は「読む」で編集できます。"))
+                } else {
+                    ScrollViewReader { reader in
+                        ScrollView([.horizontal, .vertical]) {
+                            LazyVStack(alignment: .leading, spacing: 16) {
+                                ForEach(rows.indices, id: \.self) { index in
+                                    if session.singingLayout == .overview || index == session.detailIndex {
+                                        SingingTimelineRow(song: song, measures: rows[index],
+                                                           scale: session.singingLayout == .detail ? 120 : 54,
+                                                           session: session, onMeasureTap: selectMeasure, seek: seek)
+                                            .id(index)
+                                    }
+                                }
+                            }.padding(.horizontal, 18).padding(.bottom, 24)
+                        }
+                        .modifier(ManualScrollTracking(session: session))
+                        .onChange(of: session.position) { _, newPosition in
+                            guard session.followPlayback else { return }
+                            let sliceIndex = projection.containing(newPosition)
+                            let next = session.singingLayout == .detail ? sliceIndex / 2 : sliceIndex / columns
+                            if session.singingLayout == .detail { session.detailIndex = next }
+                            withAnimation(.easeInOut(duration: 0.2)) { reader.scrollTo(next, anchor: .top) }
+                        }
+                    }
+                }
             }
-        } else {
-            ContentUnavailableView("この範囲の時間軸は表示できません", systemImage: "music.note", description: Text("Readingで意味や発音を編集できます。128拍を超えるフレーズの表示には、今後分割表示を追加します。"))
+            .onChange(of: session.phraseID) { _, _ in
+                guard session.guideState != .playing, let range = phrase.timeRange else { return }
+                session.detailIndex = projection.containing(range.start.doubleValue) / 2
+            }
         }
     }
 
-    private func timeline(_ range: BeatRange) -> some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 14).fill(Color(nsColor: .controlBackgroundColor))
-            ForEach(0...Int(ceil(extent)), id: \.self) { tick in
-                VStack(spacing: 10) {
-                    Text("\(Int(origin) + tick + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                    Rectangle().fill(Color.primary.opacity(0.07)).frame(width: 1, height: 285)
-                }.position(x: 18 + Double(tick) * unit, y: 158)
+    private func controls(slices: [MeasureSlice]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Picker("表示", selection: $session.singingLayout) {
+                    ForEach(SingingLayout.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).frame(width: 175)
+                Picker("音高", selection: $session.pitchDisplay) {
+                    ForEach(PitchDisplay.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).frame(width: 230)
+                Spacer(minLength: 0)
+                Toggle("読み", isOn: $session.showReading).toggleStyle(.checkbox)
+                Toggle("IPA", isOn: $session.showIPA).toggleStyle(.checkbox)
+                Toggle("再生位置に追従", isOn: $session.followPlayback).toggleStyle(.checkbox)
             }
-            ForEach(song.words(in: phrase)) { word in
-                let spans = song.syllables(in: word).flatMap { song.ranges(for: .init(.syllable, $0.id)) }
-                if let first = spans.map(\.start).min(), let last = spans.map(\.end).max() {
-                    Button {
-                        session.wordID = word.id; session.showInspector = true
-                        session.position = first.doubleValue
-                    } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(word.surface).font(.system(size: 21, weight: .semibold, design: .serif))
-                            Text(word.contextualMeaning.value).font(.caption).foregroundStyle(.secondary)
-                        }.frame(width: max(50, (last.doubleValue - first.doubleValue) * unit - 10), alignment: .leading)
-                    }.buttonStyle(.plain).offset(x: x(first.doubleValue) + 8, y: 48)
+            HStack(spacing: 10) {
+                if session.singingLayout == .detail {
+                    Button("前の2小節", systemImage: "chevron.left") {
+                        session.detailIndex = max(0, session.detailIndex - 1); session.followPlayback = false
+                    }.disabled(session.detailIndex == 0)
+                    Button("次の2小節", systemImage: "chevron.right") {
+                        session.detailIndex = min(max(0, projection.detailWindows.count - 1), session.detailIndex + 1)
+                        session.followPlayback = false
+                    }.disabled(session.detailIndex >= projection.detailWindows.count - 1)
+                    Button("表示中の2小節を練習") {
+                        let window = projection.detailWindows[min(session.detailIndex, max(0, projection.detailWindows.count - 1))]
+                        if let first = window.first, let last = window.last {
+                            applyRange(.init(start: first.range.start, end: last.range.end))
+                        }
+                    }
+                }
+                Button("このフレーズを練習") {
+                    guard let range = phrase.timeRange else { return }
+                    let matching = slices.filter { $0.range.start < range.end && range.start < $0.range.end }
+                    if let first = matching.first, let last = matching.last {
+                        applyRange(.init(start: first.range.start, end: last.range.end))
+                    }
+                }.disabled(phrase.timeRange == nil)
+                if let candidate = session.practiceCandidate {
+                    Text("候補: \(measureLabel(for: candidate, slices: slices))").font(.caption).foregroundStyle(.secondary)
+                    Button("範囲を適用") { applyRange(candidate) }
+                }
+                if let range = session.practiceRange {
+                    Text("練習: \(measureLabel(for: range, slices: slices))").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Text("読みは原音の近似です").font(.caption).foregroundStyle(.secondary)
+            }
+        }.padding(.horizontal, 20).padding(.vertical, 9)
+    }
+
+    private func measureLabel(for range: BeatRange, slices: [MeasureSlice]) -> String {
+        let selected = slices.filter { $0.range.start < range.end && range.start < $0.range.end }
+        guard let first = selected.first, let last = selected.last else { return "拍 \(range.start.doubleValue)–\(range.end.doubleValue)" }
+        return first.id == last.id ? "\(first.number)小節" : "\(first.number)–\(last.number)小節"
+    }
+
+    private func selectMeasure(_ measure: MeasureSlice) {
+        if NSEvent.modifierFlags.contains(.shift), let existing = session.practiceCandidate {
+            session.practiceCandidate = .init(start: min(existing.start, measure.range.start),
+                                              end: max(existing.end, measure.range.end))
+        } else { session.practiceCandidate = measure.range }
+        session.followPlayback = false
+        if session.singingLayout == .overview,
+           let index = projection.slices.firstIndex(where: { $0.id == measure.id }) {
+            session.detailIndex = index / 2
+        }
+    }
+}
+
+private struct ManualScrollTracking: ViewModifier {
+    @ObservedObject var session: WorkspaceSession
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.onScrollPhaseChange { _, phase in
+                if phase == .tracking || phase == .interacting || phase == .decelerating {
+                    session.followPlayback = false
                 }
             }
-            ForEach(song.words(in: phrase).flatMap { song.syllables(in: $0) }) { syllable in
-                let spans = song.ranges(for: .init(.syllable, syllable.id))
-                if let first = spans.map(\.start).min(), let last = spans.map(\.end).max() {
+        } else {
+            content.simultaneousGesture(DragGesture(minimumDistance: 5).onChanged { _ in
+                session.followPlayback = false
+            })
+        }
+    }
+}
+
+private struct SingingTimelineRow: View {
+    let song: SongDocument
+    let measures: [MeasureSlice]
+    let scale: Double
+    @ObservedObject var session: WorkspaceSession
+    let onMeasureTap: (MeasureSlice) -> Void
+    let seek: (Double) -> Void
+
+    private let left = 58.0
+    private let pianoTop = 180.0
+    private let keyHeight = 18.0
+    private var start: Double { measures.first?.range.start.doubleValue ?? 0 }
+    private var end: Double { measures.last?.range.end.doubleValue ?? start }
+    private var pitches: [Int] { song.music.events.compactMap { $0.note?.pitch } }
+    private var low: Int { max(0, (pitches.min() ?? 60) - 2) }
+    private var high: Int { min(127, (pitches.max() ?? 72) + 2) }
+    private var pianoHeight: Double { Double(high - low + 1) * keyHeight }
+    private var height: Double { pianoTop + max(pianoHeight, 165) + 34 }
+    private var width: Double { left + (end - start) * scale + 16 }
+    private func x(_ beat: Double) -> Double { left + (beat - start) * scale }
+    private func clipped(_ range: BeatRange) -> (Double, Double)? {
+        let from = max(start, range.start.doubleValue)
+        let to = min(end, range.end.doubleValue)
+        return from < to ? (from, to) : nil
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor))
+            ForEach(measures) { measure in
+                let from = x(measure.range.start.doubleValue)
+                Rectangle().fill(Color.primary.opacity(0.18)).frame(width: 1, height: height - 18).offset(x: from, y: 16)
+                Button(measure.inferred ? "\(measure.number)小節（推定）" : "\(measure.number)小節") {
+                    onMeasureTap(measure)
+                }.font(.caption.monospacedDigit()).buttonStyle(.plain)
+                    .frame(width: max(50, measure.range.length * scale - 6), alignment: .leading)
+                    .offset(x: from + 4, y: 12)
+                    .accessibilityHint("Shiftキーで範囲を拡張")
+                let beatUnit = song.music.meters.last(where: { $0.onset <= measure.range.start }).map { 4.0 / Double($0.denominator) } ?? 1
+                if beatUnit > 0 {
+                    ForEach(1..<max(1, min(64, Int(ceil(measure.range.length / beatUnit)))), id: \.self) { tick in
+                        let beat = measure.range.start.doubleValue + Double(tick) * beatUnit
+                        if beat < measure.range.end.doubleValue {
+                            Rectangle().fill(Color.primary.opacity(0.06)).frame(width: 1, height: height - 60)
+                                .offset(x: x(beat), y: 45)
+                        }
+                    }
+                }
+            }
+            lyrics
+            if session.pitchDisplay == .pianoRoll { pianoRoll }
+            else if let issue = NotationProjection(song: song, measures: measures).issue {
+                pianoRoll
+                Text(issue).font(.caption).foregroundStyle(.orange).offset(x: left, y: height - 24)
+            } else {
+                StaffRow(song: song, measures: measures, scale: scale, left: left, top: pianoTop,
+                         width: width, height: max(pianoHeight, 165), session: session)
+                if let notice = NotationProjection(song: song, measures: measures).notice {
+                    Text(notice).font(.caption).foregroundStyle(.orange).offset(x: left, y: height - 24)
+                }
+            }
+            if start <= session.position && session.position <= end {
+                Rectangle().fill(Color.teal).frame(width: 2, height: height - 25)
+                    .offset(x: x(session.position), y: 22).allowsHitTesting(false)
+            }
+            // The ruler is the sole click-to-seek surface; labels and note selection do not seek.
+            HStack {
+                Text("拍位置をクリックして移動").font(.system(size: 10)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }.contentShape(Rectangle()).frame(width: width - left - 10, height: 18)
+                .offset(x: left, y: 39)
+                .onTapGesture { location in seek(start + max(0, min(end - start, (location.x / scale)))) }
+        }.frame(width: width, height: height)
+    }
+
+    private var lyrics: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(song.words) { word in
+                let segments = song.syllables(in: word).flatMap { song.ranges(for: .init(.syllable, $0.id)) }
+                    .compactMap(clipped)
+                if let first = segments.map(\.0).min() {
+                    Button {
+                        session.wordID = word.id; session.syllableID = nil; session.showInspector = true
+                        if let phrase = song.phrase(word.parentPhraseID) { session.phraseID = phrase.id }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(word.surface).font(.system(size: 16 * session.textScale, weight: .semibold, design: .serif))
+                            Text(word.contextualMeaning.value).font(.caption2).foregroundStyle(.secondary)
+                        }.lineLimit(1)
+                    }.buttonStyle(.plain).offset(x: x(first) + 3, y: 64)
+                }
+            }
+            ForEach(song.syllables) { syllable in
+                let segments = song.ranges(for: .init(.syllable, syllable.id)).compactMap(clipped)
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     Button {
                         session.syllableID = syllable.id; session.wordID = syllable.parentWordID
-                        session.position = first.doubleValue
+                        session.showInspector = true
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(syllable.text.value).font(.system(size: 19, weight: .semibold))
-                                Text(syllable.ipa.value).font(.system(size: 14))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(syllable.text.value).font(.system(size: 14 * session.textScale, weight: .medium))
+                            if session.showReading {
+                                Text(syllable.reading.value.isEmpty ? "読み未設定" : syllable.reading.value)
+                                    .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
                             }
-                            Spacer(minLength: 0)
-                            if spans.count > 1 { Image(systemName: "link").font(.caption) }
-                        }.padding(13)
-                            .frame(width: max(45, (last.doubleValue - first.doubleValue) * unit - 8), height: 76)
-                            .background(Color.teal.opacity(session.syllableID == syllable.id ? 0.23 : 0.11), in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.teal.opacity(session.syllableID == syllable.id ? 1 : 0.25), lineWidth: session.syllableID == syllable.id ? 2 : 1))
-                    }.buttonStyle(.plain).foregroundStyle(.primary).offset(x: x(first.doubleValue) + 4, y: 119)
-                        .accessibilityLabel("音節 \(syllable.text.value)、\(spans.count)個の音符に対応")
+                            if session.showIPA { Text(syllable.ipa.value.isEmpty ? "IPA未設定" : "/\(syllable.ipa.value)/")
+                                .font(.system(size: 10 * session.textScale)).foregroundStyle(.secondary) }
+                        }.padding(.horizontal, 4).frame(width: max(22, (segment.1 - segment.0) * scale - 3), height: 55, alignment: .leading)
+                            .background(Color.teal.opacity(session.syllableID == syllable.id ? 0.25 : 0.09), in: RoundedRectangle(cornerRadius: 5))
+                    }.buttonStyle(.plain).offset(x: x(segment.0) + 2, y: 109)
+                        .accessibilityLabel("音節 \(syllable.text.value)、読み \(syllable.reading.value.isEmpty ? "未設定" : syllable.reading.value)")
                 }
             }
-            ForEach(events) { event in
+        }
+    }
+
+    private var pianoRoll: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(low...high, id: \.self) { pitch in
+                let y = pianoTop + Double(high - pitch) * keyHeight
+                let black = [1, 3, 6, 8, 10].contains(pitch % 12)
+                Rectangle().fill(black ? Color.primary.opacity(0.035) : .clear)
+                    .frame(width: width - left, height: keyHeight).offset(x: left, y: y)
                 Button {
-                    session.eventID = event.id; session.showNotes = true
+                    session.guide.audition(pitch: pitch)
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: event.note == nil ? "pause" : "music.note")
-                        Text(event.note?.name ?? "休符").fontWeight(.medium)
-                        Spacer(minLength: 0)
-                    }.font(.caption).padding(.horizontal, 10)
-                        .frame(width: max(28, event.duration.doubleValue * unit - 10), height: 33)
-                        .background(session.eventID == event.id ? Color.teal.opacity(0.3) : Color.primary.opacity(0.075), in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(session.eventID == event.id ? Color.teal : .clear))
-                }.buttonStyle(.plain).offset(x: x(event.onset.doubleValue) + 5, y: 235 + Double(67 - (event.note?.pitch ?? 60)) * 3)
-                    .accessibilityLabel("\(event.note?.name ?? "休符")、\(event.duration.doubleValue)拍、音符を編集")
+                    Text(Note(pitch: pitch).name).font(.system(size: 10).monospaced())
+                        .foregroundStyle(black ? Color.white : Color.primary)
+                        .frame(width: left - 6, height: keyHeight, alignment: .leading)
+                        .padding(.leading, 4)
+                        .background(black ? Color.black.opacity(0.8) : Color.white.opacity(0.85))
+                }.buttonStyle(.plain).offset(y: y).accessibilityLabel("鍵盤 \(Note(pitch: pitch).name)、試聴")
             }
-            Rectangle().fill(Color.teal).frame(width: 2, height: 312)
-                .overlay(alignment: .top) { Image(systemName: "arrowtriangle.down.fill").font(.system(size: 10)).foregroundStyle(.teal).offset(y: -3) }
-                .offset(x: x(min(range.end.doubleValue, max(origin, session.position))), y: 20)
-                .allowsHitTesting(false).accessibilityHidden(true)
-        }.frame(width: extent * unit + 36, height: 345)
+            ForEach(song.music.events) { event in
+                if let span = try? event.range, let segment = clipped(span) {
+                    let y = pianoTop + Double(high - (event.note?.pitch ?? low)) * keyHeight
+                    Button {
+                        session.eventID = event.id; session.showNotes = true
+                        if let phrase = song.phrases.first(where: { $0.musicalEventIDs.contains(event.id) }) { session.phraseID = phrase.id }
+                    } label: {
+                        Text(event.note?.name ?? "休符").font(.system(size: 10).monospaced()).lineLimit(1)
+                            .frame(width: max(18, (segment.1 - segment.0) * scale - 2), height: keyHeight - 2, alignment: .leading)
+                            .background(session.eventID == event.id ? Color.teal.opacity(0.75) : Color.teal.opacity(0.4), in: RoundedRectangle(cornerRadius: 3))
+                    }.buttonStyle(.plain).offset(x: x(segment.0) + 1, y: y)
+                        .accessibilityLabel("\(event.note?.name ?? "休符")、\(event.duration.doubleValue)拍、音符を編集")
+                }
+            }
+        }
+    }
+}
+
+private struct StaffRow: View {
+    let song: SongDocument
+    let measures: [MeasureSlice]
+    let scale: Double
+    let left: Double
+    let top: Double
+    let width: Double
+    let height: Double
+    @ObservedObject var session: WorkspaceSession
+    private var start: Double { measures.first?.range.start.doubleValue ?? 0 }
+    private var projection: NotationProjection { NotationProjection(song: song, measures: measures) }
+    private func x(_ beat: Double) -> Double { left + (beat - start) * scale }
+    private func y(_ step: Int) -> Double { top + 100 - Double(step) * 9 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(0..<5, id: \.self) { line in
+                Rectangle().fill(Color.primary.opacity(0.5)).frame(width: width - left - 8, height: 1)
+                    .offset(x: left, y: top + 100 - Double(line) * 18)
+            }
+            Text("𝄞").font(.system(size: 56)).offset(x: left + 2, y: top + 11)
+                .accessibilityLabel("ト音記号")
+            ForEach(measures) { measure in
+                if let meter = song.music.meters.last(where: { $0.onset <= measure.range.start }) {
+                    if measure.id == measures.first?.id || meter.onset == measure.range.start {
+                        VStack(spacing: -5) {
+                            Text("\(meter.numerator)")
+                            Text("\(meter.denominator)")
+                        }.font(.system(size: 15, weight: .bold, design: .serif))
+                            .offset(x: x(measure.range.start.doubleValue) + 9, y: top + 42)
+                    }
+                }
+            }
+            ForEach(Array(projection.pieces.enumerated()), id: \.offset) { _, piece in
+                let noteX = x(piece.start) + 8
+                let noteY = y(piece.step ?? 0)
+                if let step = piece.step {
+                    if step <= -2 {
+                        ForEach(1...max(1, (-step) / 2), id: \.self) { line in
+                            Rectangle().fill(Color.primary).frame(width: 24, height: 1)
+                                .offset(x: noteX - 4, y: y(-line * 2))
+                        }
+                    }
+                    if step >= 10 {
+                        ForEach(1...max(1, (step - 8) / 2), id: \.self) { line in
+                            Rectangle().fill(Color.primary).frame(width: 24, height: 1)
+                                .offset(x: noteX - 4, y: y(8 + line * 2))
+                        }
+                    }
+                }
+                if let accidental = piece.accidental {
+                    Text(accidental).font(.system(size: 20)).offset(x: noteX - 17, y: noteY - 16)
+                }
+                if piece.pitch != nil {
+                    Button {
+                        session.eventID = piece.eventID; session.showNotes = true
+                        if let id = piece.eventID,
+                           let phrase = song.phrases.first(where: { $0.musicalEventIDs.contains(id) }) {
+                            session.phraseID = phrase.id
+                        }
+                    } label: {
+                        Ellipse().fill(piece.duration >= 2 ? Color(nsColor: .controlBackgroundColor) : .primary)
+                            .frame(width: 15, height: 10)
+                            .overlay(Ellipse().stroke(Color.primary, lineWidth: 1.3))
+                    }.buttonStyle(.plain).offset(x: noteX, y: noteY - 5)
+                        .accessibilityLabel("音符 \(Note(pitch: piece.pitch!).name)、\(piece.duration)拍")
+                    if piece.duration < 4 {
+                        let stemUp = (piece.step ?? 0) < 4
+                        Rectangle().fill(Color.primary).frame(width: 1.5, height: 34)
+                            .offset(x: noteX + (stemUp ? 13 : 1), y: noteY + (stemUp ? -32 : 2))
+                        if piece.duration < 1 {
+                            Text(piece.duration < 0.5 ? "♬" : "♪").font(.system(size: 14))
+                                .offset(x: noteX + (stemUp ? 12 : -5), y: noteY + (stemUp ? -40 : 24))
+                        }
+                    }
+                    if piece.tiedTo {
+                        Path { path in
+                            let begin = CGPoint(x: noteX + 13, y: noteY + 10)
+                            let finish = CGPoint(x: min(width - 5, noteX + max(24, piece.duration * scale - 2)), y: noteY + 10)
+                            path.move(to: begin)
+                            path.addQuadCurve(to: finish, control: CGPoint(x: (begin.x + finish.x) / 2, y: noteY + 20))
+                        }.stroke(Color.primary, lineWidth: 1).allowsHitTesting(false)
+                    }
+                    if piece.tiedFrom && piece.start == start {
+                        Path { path in
+                            path.move(to: CGPoint(x: noteX - 13, y: noteY + 10))
+                            path.addQuadCurve(to: CGPoint(x: noteX + 2, y: noteY + 10),
+                                              control: CGPoint(x: noteX - 5, y: noteY + 19))
+                        }.stroke(Color.primary, lineWidth: 1).allowsHitTesting(false)
+                    }
+                } else {
+                    Text(restGlyph(piece.duration)).font(.system(size: 25)).offset(x: noteX, y: top + 51)
+                        .accessibilityLabel("休符 \(piece.duration)拍")
+                }
+                if [3.0, 1.5, 0.75, 0.375].contains(piece.duration) {
+                    Circle().fill(Color.primary).frame(width: 3, height: 3).offset(x: noteX + 20, y: noteY)
+                }
+            }
+            Text("五線譜 · 音名は音符を選ぶと確認できます")
+                .font(.caption2).foregroundStyle(.secondary).offset(x: left, y: top + height - 21)
+        }
+    }
+
+    private func restGlyph(_ duration: Double) -> String {
+        if duration >= 4 { return "𝄻" }
+        if duration >= 2 { return "𝄼" }
+        if duration >= 1 { return "𝄽" }
+        if duration >= 0.5 { return "𝄾" }
+        return "𝄿"
     }
 }
 
@@ -219,7 +528,8 @@ private struct SingingPreview: View {
     @StateObject private var session = WorkspaceSession()
     private let song = SampleSongDocument.make()
     var body: some View {
-        SingingView(song: song, phrase: song.phrases[0], session: session)
+        SingingView(song: song, phrase: song.phrases[0], session: session,
+                    applyRange: { _ in }, seek: { _ in })
             .frame(width: 1050, height: 520)
     }
 }

@@ -3,6 +3,9 @@ import SongCore
 import SongServices
 
 enum WorkspaceMode: String, CaseIterable { case reading = "読む", singing = "歌う" }
+enum SingingLayout: String, CaseIterable { case overview = "一覧", detail = "詳細" }
+enum PitchDisplay: String, CaseIterable { case pianoRoll = "ピアノロール", staff = "楽譜" }
+enum PlaybackScope: String, CaseIterable { case whole = "曲を通して", once = "選択範囲を1回", loop = "選択範囲をループ" }
 
 @MainActor
 final class WorkspaceSession: ObservableObject {
@@ -13,13 +16,27 @@ final class WorkspaceSession: ObservableObject {
     @Published var eventID: UUID?
     @Published var showInspector = false
     @Published var showNotes = false
-    @Published var isPlaying = false
-    @Published var loop = true
+    @Published var guideState = GuideState.stopped
+    @Published var singingLayout = SingingLayout.overview
+    @Published var pitchDisplay = PitchDisplay.pianoRoll
+    @Published var playbackScope = PlaybackScope.whole
+    @Published var practiceRange: BeatRange?
+    @Published var practiceCandidate: BeatRange?
+    @Published var detailIndex = 0
+    @Published var followPlayback = true
+    @Published var showReading = true
+    @Published var showIPA = false
     @Published var position = 0.0
     @Published var bpm = 88.0
     @Published var error: String?
     @Published var textScale = 1.0
     let guide = GuideTonePlayer()
+
+    func activeRange(for song: SongDocument) -> BeatRange? {
+        if playbackScope != .whole { return practiceRange }
+        let end = MeasureProjection.songEnd(song)
+        return end > .zero ? .init(start: .zero, end: end) : nil
+    }
 
     func replace(_ next: SongDocument, in binding: Binding<SongFile>, undo: UndoManager?, name: String) {
         let previous = binding.wrappedValue.song
@@ -35,7 +52,6 @@ final class WorkspaceSession: ObservableObject {
     }
     func select(_ phrase: Phrase) {
         phraseID = phrase.id; wordID = nil; syllableID = nil; eventID = nil
-        isPlaying = false; guide.stop(); position = phrase.timeRange?.start.doubleValue ?? 0
     }
 }
 
@@ -45,6 +61,8 @@ struct WorkspaceView: View {
     @Environment(\.undoManager) private var undoManager
     @State private var addingLyrics = false
     @State private var showAnalysis = false
+    @State private var playTask: Task<Void, Never>?
+    @State private var changingTempo = false
     @State private var input = ""
     private var song: SongDocument { file.song }
     private var phrase: Phrase? { session.phraseID.flatMap { song.phrase($0) } ?? song.phrases.first }
@@ -61,7 +79,8 @@ struct WorkspaceView: View {
                             if session.mode == .reading {
                                 ReadingView(song: song, phrase: phrase, session: session)
                             } else {
-                                SingingView(song: song, phrase: phrase, session: session)
+                                SingingView(song: song, phrase: phrase, session: session,
+                                            applyRange: applyPracticeRange, seek: seek)
                             }
                             Spacer(minLength: 0)
                         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -75,14 +94,7 @@ struct WorkspaceView: View {
                         NoteEditor(song: song, phrase: phrase, session: session, mutate: mutate).frame(height: 175)
                     }
                     Divider()
-                    if session.mode == .singing { transport(phrase) }
-                    else {
-                        HStack {
-                            Label("単語を選ぶと、意味や発音を編集できます", systemImage: "hand.tap")
-                            Spacer()
-                            Text("読みは原音の近似です")
-                        }.font(.caption).foregroundStyle(.secondary).padding(16)
-                    }
+                    transport()
                 } else { welcome }
             }.background(Color(nsColor: .textBackgroundColor))
         }
@@ -108,27 +120,32 @@ struct WorkspaceView: View {
         .onAppear {
             if session.phraseID == nil, let phrase { session.select(phrase) }
             session.bpm = song.music.tempos.first?.bpm ?? 88
+            if session.practiceRange == nil {
+                let first = Array(MeasureProjection(song: song).slices.prefix(2))
+                if let start = first.first?.range.start, let end = first.last?.range.end {
+                    session.practiceRange = .init(start: start, end: end)
+                }
+            }
+            session.guide.onFinished = {
+                session.guideState = .stopped
+                session.position = session.activeRange(for: file.song)?.end.doubleValue ?? session.position
+            }
         }
-        .onChange(of: session.mode) { _, _ in stopPlayback() }
         .onChange(of: session.bpm) { _, _ in
-            if session.isPlaying, let phrase { startGuide(phrase) }
+            if !changingTempo && (session.guideState == .playing || session.guideState == .preparing) { startGuide() }
         }
         .onChange(of: song.revision) { _, _ in
             if let id = session.eventID, song.event(id) == nil { session.eventID = nil }
             if let id = session.wordID, song.word(id) == nil { session.wordID = nil }
-            if session.isPlaying, let phrase { startGuide(phrase) }
         }
-        .task(id: session.isPlaying) {
-            guard session.isPlaying, let phrase, let range = phrase.timeRange else { return }
-            while !Task.isCancelled && session.isPlaying {
+        .onChange(of: song.music) { _, _ in
+            if session.guideState != .stopped { pauseForMusicEdit() }
+        }
+        .task(id: session.guideState) {
+            guard session.guideState == .playing else { return }
+            while !Task.isCancelled && session.guideState == .playing {
                 do { try await Task.sleep(for: .milliseconds(33)) } catch { return }
                 if let position = session.guide.position { session.position = position }
-                if session.position >= range.end.doubleValue {
-                    if session.loop {
-                        session.position = range.start.doubleValue + (session.position - range.start.doubleValue).truncatingRemainder(dividingBy: range.length)
-                        startGuide(phrase)
-                    } else { session.position = range.end.doubleValue; stopPlayback() }
-                }
             }
         }
         .onDisappear { stopPlayback() }
@@ -187,12 +204,14 @@ struct WorkspaceView: View {
                 Text("\((song.phrases.firstIndex { $0.id == phrase.id } ?? 0) + 1) / \(song.phrases.count)")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            Text(phrase.originalText).font(.system(size: 32 * session.textScale, weight: .semibold, design: .serif)).textSelection(.enabled)
-            TextField("全文の日本語訳を追加", text: Binding(get: { file.song.phrase(phrase.id)?.translation.value ?? "" }, set: { value in
-                mutate("全文訳を編集") { doc in
-                    if let i = doc.phrases.firstIndex(where: { $0.id == phrase.id }) { doc.phrases[i].translation.edit(value) }
-                }
-            })).textFieldStyle(.plain).font(.system(size: 16 * session.textScale)).foregroundStyle(.secondary)
+            if session.mode == .reading {
+                Text(phrase.originalText).font(.system(size: 32 * session.textScale, weight: .semibold, design: .serif)).textSelection(.enabled)
+                TextField("全文の日本語訳を追加", text: Binding(get: { file.song.phrase(phrase.id)?.translation.value ?? "" }, set: { value in
+                    mutate("全文訳を編集") { doc in
+                        if let i = doc.phrases.firstIndex(where: { $0.id == phrase.id }) { doc.phrases[i].translation.edit(value) }
+                    }
+                })).textFieldStyle(.plain).font(.system(size: 16 * session.textScale)).foregroundStyle(.secondary)
+            }
             HStack(spacing: 12) {
                 Label("\(phrase.wordIDs.count) 単語", systemImage: "textformat")
                 Label("\(song.words(in: phrase).flatMap(\.syllableIDs).count) 音節", systemImage: "circle.grid.2x1")
@@ -204,21 +223,29 @@ struct WorkspaceView: View {
         }.padding(30)
     }
 
-    private func transport(_ phrase: Phrase) -> some View {
+    private func transport() -> some View {
         HStack(spacing: 18) {
             Button {
-                if let range = phrase.timeRange, session.position >= range.end.doubleValue { session.position = range.start.doubleValue }
-                if session.isPlaying { stopPlayback() }
-                else { startGuide(phrase) }
-            } label: { Image(systemName: session.isPlaying ? "pause.fill" : "play.fill").frame(width: 22, height: 22) }
-                .buttonStyle(.borderedProminent).accessibilityLabel(session.isPlaying ? "一時停止" : "ガイド音を再生").disabled(phrase.timeRange == nil)
-            Button { stopPlayback(); session.position = phrase.timeRange?.start.doubleValue ?? 0
+                switch session.guideState {
+                case .playing: session.guide.pause(); session.guideState = .paused
+                case .paused: session.guide.resume(); session.guideState = .playing
+                default: startGuide()
+                }
+            } label: { Image(systemName: session.guideState == .playing ? "pause.fill" : "play.fill").frame(width: 22, height: 22) }
+                .buttonStyle(.borderedProminent).accessibilityLabel(session.guideState == .playing ? "一時停止" : "ガイド音を再生")
+                .disabled(session.activeRange(for: song) == nil || !song.music.events.contains(where: { $0.note != nil }))
+            Button { stopPlayback(); session.position = session.activeRange(for: song)?.start.doubleValue ?? 0
             } label: { Image(systemName: "stop.fill") }.buttonStyle(.borderless).accessibilityLabel("停止")
-            Toggle(isOn: $session.loop) { Label("このフレーズをループ", systemImage: "repeat") }.toggleStyle(.button).font(.caption)
+            Picker("再生範囲", selection: $session.playbackScope) {
+                ForEach(PlaybackScope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }.frame(width: 185).onChange(of: session.playbackScope) { _, _ in resetForScopeChange() }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 3) {
                 Text("練習テンポ \(Int(session.bpm))").font(.caption.monospacedDigit())
-                Slider(value: $session.bpm, in: 30...240, step: 1).frame(width: 140).accessibilityLabel("練習テンポ")
+                Slider(value: $session.bpm, in: 30...240, step: 1, onEditingChanged: { editing in
+                    changingTempo = editing
+                    if !editing && (session.guideState == .playing || session.guideState == .preparing) { startGuide() }
+                }).frame(width: 140).accessibilityLabel("練習テンポ")
             }
             VStack(alignment: .trailing, spacing: 4) {
                 Text(String(format: "%.1f 拍", session.position + 1)).monospacedDigit()
@@ -269,21 +296,73 @@ struct WorkspaceView: View {
         session.replace(sample, in: $file, undo: undoManager, name: "サンプルを読み込み")
         if let first = file.song.phrases.first { session.select(first) }
         session.bpm = file.song.music.tempos.first?.bpm ?? 88
+        session.position = 0
+        session.detailIndex = 0
+        session.playbackScope = .whole
+        let first = Array(MeasureProjection(song: file.song).slices.prefix(2))
+        if let start = first.first?.range.start, let end = first.last?.range.end {
+            session.practiceRange = .init(start: start, end: end)
+        } else { session.practiceRange = nil }
     }
 
-    private func startGuide(_ phrase: Phrase) {
-        do {
-            try session.guide.play(song: song, phrase: phrase, fromBeat: session.position, bpm: session.bpm)
-            session.isPlaying = true
-        } catch {
-            stopPlayback()
-            session.error = "ガイド音を再生できませんでした: \(error.localizedDescription)"
+    private func startGuide() {
+        guard let range = session.activeRange(for: song) else { return }
+        playTask?.cancel()
+        session.guide.stop()
+        if session.position < range.start.doubleValue || session.position >= range.end.doubleValue {
+            session.position = range.start.doubleValue
+        }
+        let currentSong = song
+        let start = session.position
+        let bpm = session.bpm
+        let loop = session.playbackScope == .loop
+        session.guideState = .preparing
+        playTask = Task {
+            do {
+                try await session.guide.play(song: currentSong, range: range, fromBeat: start, bpm: bpm, loop: loop)
+                if !Task.isCancelled { session.guideState = .playing }
+            } catch is CancellationError {
+                // A newer play or stop invalidated this preparation.
+            } catch {
+                if !Task.isCancelled {
+                    session.guideState = .failed
+                    session.error = "ガイド音を再生できませんでした: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
     private func stopPlayback() {
-        session.isPlaying = false
+        playTask?.cancel(); playTask = nil
         session.guide.stop()
+        session.guideState = .stopped
+    }
+
+    private func pauseForMusicEdit() {
+        if let current = session.guide.position { session.position = current }
+        stopPlayback()
+        if let range = session.activeRange(for: song) {
+            session.position = min(range.end.doubleValue, max(range.start.doubleValue, session.position))
+        }
+    }
+
+    private func resetForScopeChange() {
+        stopPlayback()
+        session.position = session.activeRange(for: song)?.start.doubleValue ?? 0
+    }
+
+    private func applyPracticeRange(_ range: BeatRange) {
+        session.practiceRange = range
+        session.practiceCandidate = nil
+        if session.playbackScope != .whole { resetForScopeChange() }
+    }
+
+    private func seek(_ beat: Double) {
+        guard let range = session.activeRange(for: song) else { return }
+        let wasPlaying = session.guideState == .playing
+        session.position = min(range.end.doubleValue, max(range.start.doubleValue, beat))
+        if wasPlaying { startGuide() }
+        else { stopPlayback() }
     }
 }
 

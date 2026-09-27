@@ -76,8 +76,23 @@ public enum TwinkleSample {
         var doc = SongDocument()
         doc.id = id()
         doc.metadata = .init(title: "Twinkle, Twinkle, Little Star", sourceLanguage: "en")
-        doc.metadata.notes = "Jane Taylor『The Star』(1806) と伝承曲『Ah! vous dirai-je, maman』の旋律。教育用にハ長調の単旋律を入力。歌声は含みません。"
+        doc.metadata.notes = "Jane Taylor『The Star』(1806) と伝承曲『Ah! vous dirai-je, maman』の旋律。教育用にハ長調の単旋律を入力。発音は一般的な米語の教材用近似。diamondは歌の2音節に合わせています。歌声は含みません。"
         doc.music.tempos = [.init(bpm: 96)]
+        let pronunciation: [String: [(ipa: String, reading: String)]] = [
+            "twinkle": [("twɪŋ", "トゥウィン"), ("kəl", "クル")],
+            "little": [("lɪt", "リト"), ("əl", "ル")],
+            "star": [("stɑːr", "スター")],
+            "how": [("haʊ", "ハウ")], "i": [("aɪ", "アイ")],
+            "wonder": [("wʌn", "ワン"), ("dər", "ダー")],
+            "what": [("wʌt", "ワット")], "you": [("juː", "ユー")],
+            "are": [("ɑːr", "アー")], "up": [("ʌp", "アップ")],
+            "above": [("ə", "ア"), ("bʌv", "バヴ")],
+            "the": [("ðə", "ザ")], "world": [("wɝːld", "ワールド")],
+            "so": [("soʊ", "ソウ")], "high": [("haɪ", "ハイ")],
+            "like": [("laɪk", "ライク")], "a": [("ə", "ア")],
+            "diamond": [("daɪ", "ダイ"), ("mənd", "マンド")],
+            "in": [("ɪn", "イン")], "sky": [("skaɪ", "スカイ")]
+        ]
         let sectionID = id()
         for (lineNumber, line) in lines.enumerated() {
             let start = lineNumber * 8
@@ -104,8 +119,13 @@ public enum TwinkleSample {
                 var word = Word(id: id(), parentPhraseID: phraseID, surface: item.surface)
                 word.contextualMeaning = .init(item.meaning)
                 word.lemma = .init(item.surface.trimmingCharacters(in: .punctuationCharacters).lowercased())
-                for text in item.syllables {
-                    let syllable = Syllable(id: id(), parentWordID: word.id, text: text)
+                let key = item.surface.trimmingCharacters(in: .punctuationCharacters).lowercased()
+                let sounds = pronunciation[key]!
+                precondition(sounds.count == item.syllables.count)
+                for (index, text) in item.syllables.enumerated() {
+                    let sound = sounds[index]
+                    let syllable = Syllable(id: id(), parentWordID: word.id, text: text,
+                                            ipa: sound.ipa, reading: sound.reading)
                     word.syllableIDs.append(syllable.id)
                     doc.syllables.append(syllable)
                     doc.alignments.append(.init(id: id(), languageTargets: [.init(.syllable, syllable.id)],
