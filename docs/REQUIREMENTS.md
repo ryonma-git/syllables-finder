@@ -19,7 +19,7 @@ Language-first Musical Workspace。Reading / Singing は同じ SongDocument の�
 | R03 | 音楽の独立 | Note/Rest/Measure/Tempo/Meter と音楽側 Section/Phrase の範囲を言語から分離 |
 | R04 | 対応付け | Word/Syllable/Mora/Phoneme と Event/TimeRange の多対多。メリスマ、タイ、エリジオンを区別 |
 | R05 | Reading | 日本語の意味、原文、IPA、読み、音節、全文訳。詳細を段階表示。編集値を保存 |
-| R06 | Singing | 歌詞と音節を上、音符を下に同一時間尺度で表示。Phrase 選択・loop・tempo・playhead |
+| R06 | Singing | 約2小節の詳細と複数小節の一覧。小節/拍に比例した共通時間軸、鍵盤付きピアノロール/楽譜、音名/読み表示。曲通し/範囲1回/範囲loop、tempo、playhead、連続追従 |
 | R07 | 編集 | 言語情報・音符・対応付けに Undo/Redo。人の修正は再解析で保護。分割変更は明示的な差分適用 |
 | R08 | MIDI | 最終 MVP は SMF import/export、追加/削除/pitch/onset/duration/velocity/複数選択/コピー/移動/quantize/track/channel/tempo |
 | R09 | MusicXML | 最終 MVP は import/export。lyric/syllabic/extend/tie/measure/voice/part/tempo/meter。未知情報を保全 |
@@ -29,7 +29,14 @@ Language-first Musical Workspace。Reading / Singing は同じ SongDocument の�
 | R13 | 再生・出力 | MIDI ガイド音、Word/Syllable/Phrase の音声、A4 interlinear 教材。歌唱生成はしない |
 | R14 | 品質 | macOS 標準操作、VoiceOver、キーボード、文字拡大、十分なコントラスト、必要範囲だけ描画 |
 
-## 今回の到達点と将来 MVP
+## 次の実装範囲（設計済み）
+
+R02/R05/R06/R13の歌唱練習を [SINGING_PRACTICE_PLAN.md](SINGING_PRACTICE_PLAN.md) に具体化した。
+一般的な楽譜編集ではなく単旋律の練習用五線表示。画面内鍵盤、カタカナ読み、曲通し再生を実装する。
+詳細/一覧と再生範囲を独立させる。初期の音声生成は練習速度で5分以内、五線譜の対応範囲外は理由付きピアノロール表示。
+schema変更や既存文書の自動補完は行わない。次の実装担当はSol中、受入条件はリンク先に記載。
+
+## 初回の到達点と将来 MVP
 
 今回の最低到達点は build、設計8文書、基礎ドメイン/サンプル/tests、動く Reading、
 Singing の対応表示、transport の視覚動作、簡易音符編集の基礎、AI protocol/Mock。
@@ -43,6 +50,7 @@ iPadOS は今回は build 対象外。core と services に SwiftUI/AppKit 依�
 
 新規作成の短文「Morning light, softly glow.」と単純な音列を使用。
 独立した日本語「ひかり」の例でモーラ構造も検証。授業入力・既存楽曲の転載は追加しない。
+追加済みの「Twinkle, Twinkle, Little Star」は12小節・42音の伝承曲サンプル（ADR009）。次の実装でIPA/読みを補う。
 
 ## 調査した既存資産
 
@@ -58,5 +66,5 @@ iPadOS は今回は build 対象外。core と services に SwiftUI/AppKit 依�
 | tests / test_vowel_marker.py | 既存機能保全の回帰検証として継続 |
 | docs/SSOT.md 等 | canonical 運用を維持。生成物・文書内容は Git 外 |
 
-現状には曲の永続モデル、IPA、音節分割、MIDI/XML、Undo、AI は存在しない。
+調査時の旧Python版には曲の永続モデル、IPA、音節分割、MIDI/XML、Undo、AI は存在しない。
 綴り範囲を音素と見なすと誤るため、旧ロジックと新モデルの意味を混同しない。

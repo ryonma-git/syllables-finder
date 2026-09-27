@@ -60,7 +60,18 @@ InagawaのcanonicalをSSOTとし、GitHubを公開ミラーとして追加。`or
 現代の録音や出所不明のMIDIを取り込まず、音符データから単旋律MIDIを生成する。
 単旋律ガイド音はAVAudioEngineで生成し、歌声合成と区別する。SMFの一般的なimport/export完了とは扱わない。
 
-## 設計自己レビュー（実装前）
+## 010 — 小節の表示窓と再生範囲を分離（2026-09-27、設計済み・未実装）
+
+ユーザーの「モード」は約2小節を拡大する詳細と、楽譜のように複数小節を見渡す一覧を指す。
+一覧を歌唱練習の初期表示にする。表示の詳細/一覧、音高のピアノロール/楽譜、曲通し/範囲1回/範囲loopは独立。
+ADR005のPhrase中心は読解に維持し、歌唱viewportとtransportの単位にはしない。ADR008の128拍描画制限は小節窓で置き換える。
+時間幅は小節/拍に比例。将来の単語幅モードも保存時間を変えない。既存schemaのまま派生投影を追加する。
+連続音声はPhraseを連結せず全music.eventsから計画し、表示追従はplayer clockを読むだけにする。
+短い教材向けには5分上限の非同期PCM生成とnode loopを採用。長時間streamingは別工程。
+鍵盤表示/試聴、単旋律五線、サンプルの読み補完を含む契約・受入条件は [SINGING_PRACTICE_PLAN.md](SINGING_PRACTICE_PLAN.md)。
+設計引継ぎで一度停止し、Sol中による実装へ切り替える。別CLI/agentを自動起動してこの停止を飛ばさない。
+
+## 初回設計の自己レビュー（実装前）
 
 - 階層: 混在音素を二重実体化せず親参照で一意化 → DATA_MODELへ反映。
 - Phrase: 言語Phraseの練習範囲と音楽側MusicSpanを区別 → ARCHITECTUREとDATA_MODEL一致。

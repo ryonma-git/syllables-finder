@@ -33,6 +33,13 @@ package の不明な regular file/directory は保持、symlink は安全性の�
 
 ## 性能と UI
 
+次の実装では [歌唱練習の実装引継ぎ](SINGING_PRACTICE_PLAN.md) に従い、Phrase固定のviewportを小節単位へ置き換える。
+SongCoreの純粋な小節投影・TempoMap・PlaybackPlanを、詳細/一覧/ピアノロール/楽譜が共有する。
+編集選択・練習範囲・viewport・transportを分け、ページ送りで音声を再開始しない。
+音声はバックグラウンドPCM生成とplayer sample clock、nodeのloop予約、generationによるcancel保護で実装する。
+初期の音声対応範囲は練習速度で5分以内。長曲の描画/保存は制限せず、長時間の音声streamingは後続。
+これらは設計済み・実装前。以下は現行実装の制約。
+
 言語/音楽 lookup は ID ベース。最初は配列で順序を明示。大曲では document revision 単位で index を構築する。
 Reading は LazyVGrid、Singing は選択 Phrase のみ表示。全曲の巨大 Canvas は作らない。
 初回UIは128拍を超える単一Phraseを表示せず、分割viewportは後続工程。
