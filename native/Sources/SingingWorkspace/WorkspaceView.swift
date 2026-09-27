@@ -71,6 +71,8 @@ struct WorkspaceView: View {
     @State private var playTask: Task<Void, Never>?
     @State private var changingTempo = false
     @State private var input = ""
+    @State private var inputLanguage = "en"
+    @State private var splitSyllables = true
     private var song: SongDocument { file.song }
     private var phrase: Phrase? { session.phraseID.flatMap { song.phrase($0) } ?? song.phrases.first }
 
@@ -121,6 +123,11 @@ struct WorkspaceView: View {
                 Menu {
                     Button("歌詞を追加…", systemImage: "text.badge.plus") { addingLyrics = true }
                     Button("意味を解析…", systemImage: "sparkles") { showAnalysis = true }.disabled(phrase == nil)
+                    Button("未分割の単語を音節に分ける", systemImage: "scissors") {
+                        mutate("未分割の単語を音節に分ける") { doc in
+                            for id in doc.phrases.map(\.id) { doc.syllabifyUnsplitWords(phraseID: id) }
+                        }
+                    }.disabled(!song.words.contains { $0.syllableIDs.isEmpty })
                     Divider()
                     Button("文字を大きく") { session.textScale = min(1.5, session.textScale + 0.1) }
                     Button("文字を小さく") { session.textScale = max(0.9, session.textScale - 0.1) }
@@ -337,22 +344,69 @@ struct WorkspaceView: View {
     }
 
     private var lyricsSheet: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let lines = input.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return VStack(alignment: .leading, spacing: 14) {
             Text("歌詞を追加").font(.title2.bold())
-            Text("1行ずつフレーズになります。原文の空白や記号はそのまま保持します。").font(.callout).foregroundStyle(.secondary)
-            TextEditor(text: $input).font(.body).frame(width: 480, height: 180).border(Color.secondary.opacity(0.2)).accessibilityLabel("追加する歌詞")
+            Text("1行ずつフレーズになります。原文の空白や記号はそのまま保持します。歌詞は利用者が権利を確認したものを使ってください。")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 16) {
+                Picker("言語", selection: $inputLanguage) {
+                    ForEach(Syllabifier.languages) { Text($0.name).tag($0.id) }
+                }.frame(width: 260)
+                Toggle("音節に分ける（規則による候補）", isOn: $splitSyllables).toggleStyle(.checkbox)
+            }
+            TextEditor(text: $input).font(.body).frame(width: 560, height: 150).border(Color.secondary.opacity(0.2)).accessibilityLabel("追加する歌詞")
+            if splitSyllables && !lines.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("音節の候補（追加後に単語の詳細で直せます）").font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(Array(lines.prefix(12).enumerated()), id: \.offset) { _, line in
+                                Text(syllablePreview(line)).font(.system(size: 13, design: .serif)).textSelection(.enabled)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(height: min(130, Double(min(lines.count, 12)) * 20 + 6))
+                    Text(inputLanguage == "ja" ? "漢字の読みは推定です。「漢字（かんじ）」と書くと読みを指定できます。"
+                         : inputLanguage == "ru" ? "強勢は母音の後に結合アクセント（◌́）を付けると指定できます。" : "・は音節の区切り、太字は推定した強勢です。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             HStack {
                 Button("キャンセル", role: .cancel) { addingLyrics = false }
                 Spacer()
                 Button("追加") {
+                    let language = inputLanguage
+                    let split = splitSyllables
                     mutate("歌詞を追加") { doc in
-                        for line in input.components(separatedBy: .newlines) { doc.appendPhrase(text: line) }
+                        if doc.phrases.isEmpty { doc.metadata.sourceLanguage = language }
+                        for line in input.components(separatedBy: .newlines) { doc.appendPhrase(text: line, language: language, syllabify: split) }
                     }
                     if let last = file.song.phrases.last { session.select(last) }
                     input = ""; addingLyrics = false
-                }.buttonStyle(.borderedProminent).disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }.buttonStyle(.borderedProminent).disabled(lines.isEmpty)
             }
         }.padding(28)
+            .onAppear {
+                let current = song.metadata.sourceLanguage
+                inputLanguage = Syllabifier.supports(current) ? current : "en"
+            }
+    }
+
+    private func syllablePreview(_ line: String) -> AttributedString {
+        var result = AttributedString()
+        for (index, token) in Syllabifier.tokenize(line, language: inputLanguage).enumerated() {
+            if index > 0 { result += AttributedString("   ") }
+            let split = Syllabifier.syllabify(token, language: inputLanguage)
+            if split.syllables.isEmpty { result += AttributedString(token.surface + "（未分割）"); continue }
+            for (position, syllable) in split.syllables.enumerated() {
+                if position > 0 { result += AttributedString("・") }
+                var part = AttributedString(syllable)
+                if position == split.stressIndex { part.inlinePresentationIntent = .stronglyEmphasized }
+                result += part
+            }
+            if let readings = split.readings { result += AttributedString("（\(readings.joined(separator: "・"))）") }
+        }
+        return result
     }
 
     private func mutate(_ name: String, _ mutation: (inout SongDocument) throws -> Void) {
