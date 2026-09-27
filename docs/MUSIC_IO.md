@@ -6,6 +6,10 @@ import/export未実装を「対応」と表示しない。adapter は SongCore �
 
 ## MIDI
 
+2026-09-28: 読み込みを実装（`SongCore/MIDIFileImport.swift`、テスト `MIDIFileImportTests`）。トラック（format 0 はチャンネル）ごとに声部候補、
+テンポ・拍子は曲全体の地図へ、原ファイルは package の `source/` に保持。クオンタイズは読込画面で明示的に選ぶ（既定16分、「揃えない」も可）。
+歌詞メタ・コントロール・program・SysEx は取り込まず原ファイルに残す。書き出しはサンプル用の単旋律（SampleMIDI）のみで、一般の書き出しは未実装。
+
 SMF type 0/1、PPQ時間を最初の対象。type 2/SMPTE は実装まで理由付きで拒否。
 tick/PPQ → Beat。有効なnote-on/offをtrack/channel/pitchで対応付け、velocity=0 はoff。
 同音重複はqueueで対応し、未対offは診断。tempo/meterをglobal mapに変換。

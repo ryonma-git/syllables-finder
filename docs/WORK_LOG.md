@@ -1,5 +1,17 @@
 # 作業記録 — 2026-09-27
 
+## 2026-09-28 追加作業: Claudeによる歌詞×旋律の割付・多言語・声部・楽譜（branch `claude/lyrics-melody-alignment`）
+
+- ChatGPT（GPT-6 Astra高）との設計相談が利用上限で中断したため、利用者の依頼でClaude Opus 5.5が意思を引き継いだ。ChatGPT側と分けるため `codex/native-singing-foundation`（`1a0af6b`）から別branchを作成。`main`・Codexの作業フォルダ（`~/.codex/worktrees/53dd`、clean）には触れていない。
+- 設計: [LYRICS_MELODY_DESIGN.md](LYRICS_MELODY_DESIGN.md) を新設、REQUIREMENTS（目的・R15〜R20）、DECISIONS（ADR011〜016）、DATA_MODEL、IMPLEMENTATION_PLAN、MUSIC_IO、READMEの記述を更新。
+- 楽譜: 旧表示を画像で再現し、符頭が譜線間隔の半分・音部/拍子記号のずれ・小節線なし・旗が文字、を確認。譜線間隔基準の記譜レイアウト（SongCore `StaffEngraving`）と共通描画（新モジュール `SongNotation`）に置き換え、五線の下に歌詞（ハイフン・メリスマ延長線・エリジオン連結）、複数声部は括弧付きの段。検証用 `SongStaffTool`（PNG出力）を追加。
+- 保存形式 schemaVersion 2（声部 Part、event.partID、Phrase.language、FieldSource.rule）。v1は開くときに移行し、保存時に元JSONを `preserved/document-v1.json` に残す。
+- 音節分割（独・西・仏・伊・羅・露・英・日のモーラ・韓・中の試験版）を規則ベースで実装。歌詞入力に言語選択と入力中の分割プレビュー、単語パネルに区切りの修正と「規則で分け直す」。
+- 割付: 一音符一音節を基本仮説とする動的計画法（タイは1音、メリスマ・エリジオン、人の修正は固定）。サンプル3曲の元の割付を完全再現。確認シートから1回のUndoで適用。
+- 旋律入力: ステップ入力（画面鍵盤・CoreMIDIの全入力、上書き入力、拍子/テンポ設定）、声部の管理（混声四部の用意、音部記号）、MIDIファイル読込（MUSIC_IOのテストゲート、クオンタイズは明示選択、原ファイル保持）。
+- 検証: Swift 73テスト（SongCore 66、SongServices 4、SongPrint 1、SongNotation 2）成功、アプリbuild成功、既存Python 12例＋23件成功。楽譜はPNG（サンプル・2声部の自作検証曲）とアプリの `ScoreRow` のオフスクリーン描画で目視確認。
+- **未確認**: 画面がロックされていたため、実画面での操作（歌詞入力画面、単語パネル、割付シート、声部シート、ステップ入力、MIDI読込画面、楽譜の選択・再生追従）は未確認。MIDI鍵盤の実機、音の実聴、日本語IME入力も未確認。確認手順は [HANDOFF-2026-09-28-CLAUDE.md](HANDOFF-2026-09-28-CLAUDE.md)。
+
 ## 追加作業: Swift版のサンプル選択とA4練習シート
 
 - 新規文書とツールバーから開ける「サンプルを表示」画面を追加。きらきら星、Mary Had a Little Lamb、Frère Jacques、Morning lightを選択し、歌詞プレビューから開ける。新しい2曲には単旋律、音節と音符の対応、日本語訳、IPA、カタカナ読みを含む。
