@@ -165,3 +165,74 @@ extension SongDocument {
         sections[sections.count - 1].phraseIDs.append(phrase.id); phrases.append(phrase)
     }
 }
+
+// MARK: Parts and step entry
+
+extension SongDocument {
+    @discardableResult
+    public mutating func addPart(name: String, abbreviation: String = "", clef: Clef = .treble) -> UUID {
+        let part = Part(name: name.isEmpty ? "声部\(music.parts.count + 1)" : name, abbreviation: abbreviation, clef: clef)
+        music.parts.append(part)
+        return part.id
+    }
+
+    /// Removes a part with its notes and their alignments. The last part of a song with notes cannot go.
+    public mutating func removePart(id: UUID) throws {
+        guard music.parts.contains(where: { $0.id == id }) else { throw SongError.invalid("声部が見つかりません。") }
+        let remaining = music.events.filter { $0.partID != id }
+        guard music.parts.count > 1 || remaining.isEmpty && music.events.isEmpty else {
+            throw SongError.invalid("最後の声部は削除できません。音符を消してから削除してください。")
+        }
+        for event in music.events where event.partID == id { removeNote(id: event.id) }
+        music.parts.removeAll { $0.id == id }
+    }
+
+    /// Appends measures from the meter map so that they reach `end` (numbering continues).
+    public mutating func extendMeasures(through end: Beat) throws {
+        var position = music.measures.map(\.range.end).max() ?? .zero
+        var number = (music.measures.compactMap { Int($0.number) }.max() ?? 0) + 1
+        var guardCount = 0
+        while position < end && guardCount < 10_000 {
+            let meter = music.meters.last { $0.onset <= position } ?? .init()
+            var next = try position.adding(Beat(Int64(meter.numerator) * 4, Int64(meter.denominator)))
+            if let change = music.meters.first(where: { position < $0.onset && $0.onset < next }) { next = change.onset }
+            music.measures.append(.init(number: String(number), range: .init(start: position, end: next)))
+            position = next; number += 1; guardCount += 1
+        }
+    }
+
+    /// Step entry: writes a note (or a rest when `pitch` is nil) at `onset` in a part, replacing what
+    /// the part had in that time span. Earlier notes reaching into the span are shortened.
+    @discardableResult
+    public mutating func enterStep(partID: UUID, onset: Beat, duration: Beat, pitch: Int?, velocity: Int = 80) throws -> UUID {
+        guard music.part(partID) != nil else { throw SongError.invalid("声部が見つかりません。") }
+        guard duration > .zero else { throw SongError.invalid("長さは0より大きくしてください。") }
+        let end = try onset.adding(duration)
+        for event in music.events where event.partID == partID {
+            guard let eventEnd = try? event.range.end else { continue }
+            if event.onset >= onset && event.onset < end {
+                removeNote(id: event.id)
+            } else if event.onset < onset && eventEnd > onset, let index = music.events.firstIndex(where: { $0.id == event.id }) {
+                music.events[index].duration = try onset.subtracting(event.onset)
+                for i in alignments.indices {
+                    alignments[i].musicTargets = alignments[i].musicTargets.map { target in
+                        if case .event(let id, let relative?) = target, id == event.id, relative.end > music.events[index].duration { return .event(id) }
+                        return target
+                    }
+                }
+            }
+        }
+        try extendMeasures(through: end)
+        let measure = music.measures.first { $0.range.start <= onset && onset < $0.range.end }?.id
+        let content: EventContent = pitch.map { .note(.init(pitch: $0, velocity: velocity)) } ?? .rest
+        let added = MusicalEvent(onset: onset, duration: duration, measureID: measure, content: content, partID: partID)
+        music.events.append(added)
+        music.events.sort { ($0.onset, $0.partID?.uuidString ?? "") < ($1.onset, $1.partID?.uuidString ?? "") }
+        return added.id
+    }
+
+    /// End of a part's last note or rest, where step entry continues.
+    public func partEnd(_ partID: UUID) -> Beat {
+        music.events.filter { $0.partID == partID }.compactMap { try? $0.range.end }.max() ?? .zero
+    }
+}

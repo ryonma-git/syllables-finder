@@ -45,6 +45,16 @@ public struct Beat: Codable, Hashable, Comparable, Sendable {
         return try Beat(num / reduced, den / reduced)
     }
 
+    /// Throws when the result would be negative.
+    public func subtracting(_ other: Beat) throws -> Beat {
+        let divisor = Self.gcd(denominator, other.denominator)
+        let den = denominator * (other.denominator / divisor)
+        let num = numerator * (other.denominator / divisor) - other.numerator * (denominator / divisor)
+        guard num >= 0 else { throw SongError.invalid("拍の差が負になりました。") }
+        let reduced = Self.gcd(num, den)
+        return try Beat(num / reduced, den / reduced)
+    }
+
     /// UI-only conversion; import adapters must construct from original integer ticks/divisions.
     public static func grid(_ value: Double, divisions: Int64 = 960) throws -> Beat {
         guard value.isFinite, divisions > 0, divisions <= 1_000_000_000,
