@@ -183,7 +183,8 @@ private struct SingingTimelineRow: View {
     let seek: (Double) -> Void
 
     private let left = 58.0
-    private let pianoTop = 180.0
+    private var pianoTop: Double { 180 + (session.showIPA ? 35 : 0) + max(0, session.textScale - 1) * 80 }
+    private var syllableHeight: Double { pianoTop - 125 }
     private let keyHeight = 18.0
     private var start: Double { measures.first?.range.start.doubleValue ?? 0 }
     private var end: Double { measures.last?.range.end.doubleValue ?? start }
@@ -191,7 +192,7 @@ private struct SingingTimelineRow: View {
     private var low: Int { max(0, (pitches.min() ?? 60) - 2) }
     private var high: Int { min(127, (pitches.max() ?? 72) + 2) }
     private var pianoHeight: Double { Double(high - low + 1) * keyHeight }
-    private var height: Double { pianoTop + max(pianoHeight, 165) + 34 }
+    private var height: Double { pianoTop + max(pianoHeight, 165) + 47 }
     private var width: Double { left + (end - start) * scale + 16 }
     private func x(_ beat: Double) -> Double { left + (beat - start) * scale }
     private func clipped(_ range: BeatRange) -> (Double, Double)? {
@@ -239,6 +240,17 @@ private struct SingingTimelineRow: View {
                 Rectangle().fill(Color.teal).frame(width: 2, height: height - 25)
                     .offset(x: x(session.position), y: 22).allowsHitTesting(false)
             }
+            let translations = song.phrases.filter { phrase in
+                guard let range = phrase.timeRange else { return false }
+                return range.start.doubleValue < end && start < range.end.doubleValue
+            }.map(\.translation.value).filter { !$0.isEmpty }
+            if !translations.isEmpty {
+                Text(translations.joined(separator: " ／ "))
+                    .font(.system(size: 12 * session.textScale)).foregroundStyle(.secondary)
+                    .lineLimit(1).help(translations.joined(separator: " ／ "))
+                    .frame(width: width - left - 12, alignment: .leading)
+                    .offset(x: left + 4, y: height - 28)
+            }
             // The ruler is the sole click-to-seek surface; labels and note selection do not seek.
             HStack {
                 Text("拍位置をクリックして移動").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -254,7 +266,7 @@ private struct SingingTimelineRow: View {
             ForEach(song.words) { word in
                 let segments = song.syllables(in: word).flatMap { song.ranges(for: .init(.syllable, $0.id)) }
                     .compactMap(clipped)
-                if let first = segments.map(\.0).min() {
+                if let first = segments.map(\.0).min(), let last = segments.map(\.1).max() {
                     Button {
                         session.wordID = word.id; session.syllableID = nil; session.showInspector = true
                         if let phrase = song.phrase(word.parentPhraseID) { session.phraseID = phrase.id }
@@ -262,8 +274,9 @@ private struct SingingTimelineRow: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(word.surface).font(.system(size: 16 * session.textScale, weight: .semibold, design: .serif))
                             Text(word.contextualMeaning.value).font(.caption2).foregroundStyle(.secondary)
-                        }.lineLimit(1)
+                        }.lineLimit(1).frame(width: max(30, (last - first) * scale - 4), alignment: .leading)
                     }.buttonStyle(.plain).offset(x: x(first) + 3, y: 64)
+                        .help("\(word.surface) · \(word.contextualMeaning.value)")
                 }
             }
             ForEach(song.syllables) { syllable in
@@ -274,17 +287,18 @@ private struct SingingTimelineRow: View {
                         session.showInspector = true
                     } label: {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(syllable.text.value).font(.system(size: 14 * session.textScale, weight: .medium))
+                            Text(syllable.text.value).font(.system(size: 14 * session.textScale, weight: .medium)).lineLimit(1)
                             if session.showReading {
                                 Text(syllable.reading.value.isEmpty ? "読み未設定" : syllable.reading.value)
-                                    .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
+                                    .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary).lineLimit(1)
                             }
                             if session.showIPA { Text(syllable.ipa.value.isEmpty ? "IPA未設定" : "/\(syllable.ipa.value)/")
-                                .font(.system(size: 10 * session.textScale)).foregroundStyle(.secondary) }
-                        }.padding(.horizontal, 4).frame(width: max(22, (segment.1 - segment.0) * scale - 3), height: 55, alignment: .leading)
+                                .font(.system(size: 10 * session.textScale)).foregroundStyle(.secondary).lineLimit(1) }
+                        }.padding(.horizontal, 4).frame(width: max(22, (segment.1 - segment.0) * scale - 3), height: syllableHeight, alignment: .leading)
                             .background(Color.teal.opacity(session.syllableID == syllable.id ? 0.25 : 0.09), in: RoundedRectangle(cornerRadius: 5))
                     }.buttonStyle(.plain).offset(x: x(segment.0) + 2, y: 109)
                         .accessibilityLabel("音節 \(syllable.text.value)、読み \(syllable.reading.value.isEmpty ? "未設定" : syllable.reading.value)")
+                        .help("\(syllable.text.value) · \(syllable.reading.value.isEmpty ? "読み未設定" : syllable.reading.value) · \(syllable.ipa.value.isEmpty ? "IPA未設定" : "/\(syllable.ipa.value)/")")
                 }
             }
         }
@@ -342,19 +356,27 @@ private struct StaffRow: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(0..<5, id: \.self) { line in
-                Rectangle().fill(Color.primary.opacity(0.5)).frame(width: width - left - 8, height: 1)
-                    .offset(x: left, y: top + 100 - Double(line) * 18)
+                Rectangle().fill(Color.primary.opacity(0.5)).frame(width: width - 14, height: 1)
+                    .offset(x: 6, y: top + 100 - Double(line) * 18)
             }
-            Text("𝄞").font(.system(size: 56)).offset(x: left + 2, y: top + 11)
+            Text("𝄞").font(.system(size: 56)).offset(x: 7, y: top + 11)
                 .accessibilityLabel("ト音記号")
             ForEach(measures) { measure in
                 if let meter = song.music.meters.last(where: { $0.onset <= measure.range.start }) {
-                    if measure.id == measures.first?.id || meter.onset == measure.range.start {
+                    if measure.id == measures.first?.id {
                         VStack(spacing: -5) {
                             Text("\(meter.numerator)")
                             Text("\(meter.denominator)")
                         }.font(.system(size: 15, weight: .bold, design: .serif))
-                            .offset(x: x(measure.range.start.doubleValue) + 9, y: top + 42)
+                            .frame(width: 22).offset(x: left - 25, y: top + 41)
+                            .accessibilityLabel("拍子 \(meter.numerator)/\(meter.denominator)")
+                    } else if meter.onset == measure.range.start {
+                        Text("\(meter.numerator)/\(meter.denominator)")
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 3))
+                            .offset(x: x(measure.range.start.doubleValue) + 4, y: top + 4)
+                            .accessibilityLabel("拍子変更 \(meter.numerator)/\(meter.denominator)")
                     }
                 }
             }
@@ -416,10 +438,10 @@ private struct StaffRow: View {
                         }.stroke(Color.primary, lineWidth: 1).allowsHitTesting(false)
                     }
                 } else {
-                    Text(restGlyph(piece.duration)).font(.system(size: 25)).offset(x: noteX, y: top + 51)
+                    StaffRest(duration: piece.duration).offset(x: noteX - 4, y: top + 44)
                         .accessibilityLabel("休符 \(piece.duration)拍")
                 }
-                if [3.0, 1.5, 0.75, 0.375].contains(piece.duration) {
+                if piece.pitch != nil && [3.0, 1.5, 0.75, 0.375].contains(piece.duration) {
                     Circle().fill(Color.primary).frame(width: 3, height: 3).offset(x: noteX + 20, y: noteY)
                 }
             }
@@ -428,12 +450,39 @@ private struct StaffRow: View {
         }
     }
 
-    private func restGlyph(_ duration: Double) -> String {
-        if duration >= 4 { return "𝄻" }
-        if duration >= 2 { return "𝄼" }
-        if duration >= 1 { return "𝄽" }
-        if duration >= 0.5 { return "𝄾" }
-        return "𝄿"
+}
+
+private struct StaffRest: View {
+    let duration: Double
+
+    var body: some View {
+        Canvas { context, _ in
+            var mark = Path()
+            if duration >= 2 {
+                // Whole and half rests hang from or sit on a staff line.
+                let y = duration >= 4 ? 21.0 : 17.0
+                mark.addRect(CGRect(x: 5, y: y, width: 13, height: 5))
+            } else if duration >= 1 {
+                mark.move(to: CGPoint(x: 12, y: 3))
+                mark.addLine(to: CGPoint(x: 18, y: 13))
+                mark.addLine(to: CGPoint(x: 10, y: 20))
+                mark.addLine(to: CGPoint(x: 17, y: 29))
+                mark.addLine(to: CGPoint(x: 8, y: 36))
+            } else {
+                mark.move(to: CGPoint(x: 15, y: 5))
+                mark.addLine(to: CGPoint(x: 10, y: 35))
+                mark.move(to: CGPoint(x: 15, y: 11))
+                mark.addQuadCurve(to: CGPoint(x: 18, y: 18), control: CGPoint(x: 28, y: 9))
+                if duration < 0.5 {
+                    mark.move(to: CGPoint(x: 13, y: 20))
+                    mark.addQuadCurve(to: CGPoint(x: 16, y: 27), control: CGPoint(x: 26, y: 18))
+                }
+            }
+            context.stroke(mark, with: .foreground, style: StrokeStyle(lineWidth: duration >= 2 ? 1 : 2.5, lineCap: .round, lineJoin: .round))
+            if [3.0, 1.5, 0.75, 0.375].contains(duration) {
+                context.fill(Path(ellipseIn: CGRect(x: 23, y: 19, width: 3, height: 3)), with: .foreground)
+            }
+        }.frame(width: 28, height: 40)
     }
 }
 

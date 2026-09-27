@@ -1,5 +1,7 @@
 # Claude → Codex 引継ぎ（2026-09-27）
 
+> **Codex追記（同日）:** この文書はClaudeから受け取った時点の記録。後続の拍子・休符・歌唱行の修正と確認は[WORK_LOG.md](WORK_LOG.md)の最新項目を参照。`main`へはmergeしていない。
+
 Swift版の歌唱練習（[SINGING_PRACTICE_PLAN.md](SINGING_PRACTICE_PLAN.md) S1〜S4）の続き。
 **実装は完了していない**。主要な再生・表示・保存は実画面で動作を確認したが、下の「残作業」が受入条件に残る。
 経緯の詳細は[WORK_LOG.md](WORK_LOG.md)の上から3項目、全体像は[IMPLEMENTATION_CHECKPOINT_2026-09-27.md](IMPLEMENTATION_CHECKPOINT_2026-09-27.md)。

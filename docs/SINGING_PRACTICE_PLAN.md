@@ -1,6 +1,6 @@
 # 歌唱練習の表示・再生 — 実装引継ぎ
 
-2026-09-27 / Astra高による設計。基点 `30612b6`。Sol中で初期実装を追加したが、**受入確認は未完了**。
+2026-09-27 / Astra高による設計。基点 `30612b6`。Sol中で初期実装し、ClaudeとCodexで実画面検証・表示修正を追加。**音声の実聴など、受入確認は未完了**。現在の確認範囲は[WORK_LOG.md](WORK_LOG.md)を参照。
 再開時は [HANDOFF-2026-09-27-CLAUDE-TO-CODEX.md](HANDOFF-2026-09-27-CLAUDE-TO-CODEX.md)（最新）と [IMPLEMENTATION_CHECKPOINT_2026-09-27.md](IMPLEMENTATION_CHECKPOINT_2026-09-27.md) の現状と残作業を先に読む。
 本書は次の実装範囲の詳細。全体要件は [REQUIREMENTS.md](REQUIREMENTS.md)、既存機能は [WORK_LOG.md](WORK_LOG.md)。
 
