@@ -130,9 +130,15 @@ struct WorkspaceView: View {
                 session.guideState = .stopped
                 session.position = session.activeRange(for: file.song)?.end.doubleValue ?? session.position
             }
+            session.guide.onInterrupted = {
+                // Keep the last known position; the next play prepares a new plan on the new device.
+                playTask?.cancel(); playTask = nil
+                session.guideState = .stopped
+            }
         }
         .onChange(of: session.bpm) { _, _ in
-            if !changingTempo && (session.guideState == .playing || session.guideState == .preparing) { startGuide() }
+            guard !changingTempo else { return }
+            tempoChanged()
         }
         .onChange(of: song.revision) { _, _ in
             if let id = session.eventID, song.event(id) == nil { session.eventID = nil }
@@ -228,7 +234,8 @@ struct WorkspaceView: View {
             Button {
                 switch session.guideState {
                 case .playing: session.guide.pause(); session.guideState = .paused
-                case .paused: session.guide.resume(); session.guideState = .playing
+                case .paused:
+                    if session.guide.resume() { session.guideState = .playing } else { startGuide() }
                 default: startGuide()
                 }
             } label: { Image(systemName: session.guideState == .playing ? "pause.fill" : "play.fill").frame(width: 22, height: 22) }
@@ -244,7 +251,7 @@ struct WorkspaceView: View {
                 Text("練習テンポ \(Int(session.bpm))").font(.caption.monospacedDigit())
                 Slider(value: $session.bpm, in: 30...240, step: 1, onEditingChanged: { editing in
                     changingTempo = editing
-                    if !editing && (session.guideState == .playing || session.guideState == .preparing) { startGuide() }
+                    if !editing { tempoChanged() }
                 }).frame(width: 140).accessibilityLabel("練習テンポ")
             }
             VStack(alignment: .trailing, spacing: 4) {
@@ -287,7 +294,14 @@ struct WorkspaceView: View {
     }
 
     private func mutate(_ name: String, _ mutation: (inout SongDocument) throws -> Void) {
-        do { session.replace(try song.editing(mutation), in: $file, undo: undoManager, name: name) }
+        do {
+            let next = try song.editing(mutation)
+            var unchanged = next
+            unchanged.revision = song.revision
+            // Text fields can write back an identical value on focus; that is not an edit.
+            guard unchanged != song else { return }
+            session.replace(next, in: $file, undo: undoManager, name: name)
+        }
         catch { session.error = error.localizedDescription }
     }
 
@@ -329,6 +343,21 @@ struct WorkspaceView: View {
                     session.error = "ガイド音を再生できませんでした: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    /// Playing: continue from the current position at the new tempo.
+    /// Paused: discard the old-tempo plan and keep the position; the play button prepares a new one.
+    private func tempoChanged() {
+        switch session.guideState {
+        case .playing, .preparing:
+            if let current = session.guide.position { session.position = current }
+            startGuide()
+        case .paused:
+            if let current = session.guide.position { session.position = current }
+            stopPlayback()
+        case .stopped, .failed:
+            break
         }
     }
 

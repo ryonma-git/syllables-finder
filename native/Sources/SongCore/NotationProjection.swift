@@ -58,15 +58,21 @@ public struct NotationProjection: Sendable {
                         problem = "音名を五線へ変換できません。ピアノロールで表示します。"; break
                     }
                     let key = parsed.octave * 7 + Self.steps[parsed.letter]!
-                    let last = activeAccidentals[key] ?? 0
+                    let continued = event.onset.doubleValue < from
                     let accidental: String?
-                    if parsed.alteration != last {
-                        accidental = parsed.alteration == 0 ? "♮" : parsed.alteration == 1 ? "♯" : "♭"
-                    } else { accidental = nil }
-                    activeAccidentals[key] = parsed.alteration
+                    if continued {
+                        // A note tied over the barline keeps its pitch without a new accidental, and
+                        // does not set this measure's state: a later same-line note still needs its sign.
+                        accidental = nil
+                    } else {
+                        let last = activeAccidentals[key] ?? 0
+                        accidental = parsed.alteration == last ? nil
+                            : parsed.alteration == 0 ? "♮" : parsed.alteration == 1 ? "♯" : "♭"
+                        activeAccidentals[key] = parsed.alteration
+                    }
                     if !Self.appendPieces(to: &output, id: event.id, start: eventFrom, end: eventTo,
                                       pitch: note.pitch, step: key - (4 * 7 + 2), accidental: accidental,
-                                      continuationBefore: event.onset.doubleValue < from,
+                                      continuationBefore: continued,
                                       continuationAfter: ((try? event.range.end.doubleValue) ?? eventTo) > to) {
                         problem = "細かい音価はピアノロールで表示します。"; break
                     }

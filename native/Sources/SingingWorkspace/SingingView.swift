@@ -8,6 +8,7 @@ struct SingingView: View {
     @ObservedObject var session: WorkspaceSession
     let applyRange: (BeatRange) -> Void
     let seek: (Double) -> Void
+    @State private var followedRow: Int?
 
     private var projection: MeasureProjection { MeasureProjection(song: song) }
 
@@ -42,12 +43,15 @@ struct SingingView: View {
                         }
                         .modifier(ManualScrollTracking(session: session))
                         .onChange(of: session.position) { _, newPosition in
-                            guard session.followPlayback else { return }
-                            let sliceIndex = projection.containing(newPosition)
-                            let next = session.singingLayout == .detail ? sliceIndex / 2 : sliceIndex / columns
-                            if session.singingLayout == .detail { session.detailIndex = next }
-                            withAnimation(.easeInOut(duration: 0.2)) { reader.scrollTo(next, anchor: .top) }
+                            follow(newPosition, columns: columns, reader: reader)
                         }
+                        .onChange(of: session.followPlayback) { _, following in
+                            // Turning follow back on returns to the current playback position.
+                            followedRow = nil
+                            if following { follow(session.position, columns: columns, reader: reader) }
+                        }
+                        .onChange(of: session.singingLayout) { _, _ in followedRow = nil }
+                        .onChange(of: columns) { _, _ in followedRow = nil }
                     }
                 }
             }
@@ -56,6 +60,17 @@ struct SingingView: View {
                 session.detailIndex = projection.containing(range.start.doubleValue) / 2
             }
         }
+    }
+
+    private func follow(_ position: Double, columns: Int, reader: ScrollViewProxy) {
+        guard session.followPlayback else { return }
+        let sliceIndex = projection.containing(position)
+        let next = session.singingLayout == .detail ? sliceIndex / 2 : sliceIndex / columns
+        if session.singingLayout == .detail { session.detailIndex = next }
+        // Scroll only when playback enters another row, not on every clock tick.
+        guard followedRow != next else { return }
+        followedRow = next
+        withAnimation(.easeInOut(duration: 0.2)) { reader.scrollTo(next, anchor: .top) }
     }
 
     private func controls(slices: [MeasureSlice]) -> some View {

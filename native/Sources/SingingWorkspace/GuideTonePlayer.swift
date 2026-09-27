@@ -17,13 +17,31 @@ final class GuideTonePlayer {
     private var pausedPosition: Double?
     private var loop = false
     private(set) var state = GuideState.stopped
+    nonisolated(unsafe) private var configurationObserver: NSObjectProtocol?  // written once in init
     var onFinished: (@MainActor () -> Void)?
+    /// Called when the output device configuration changed and playback was cancelled.
+    var onInterrupted: (@MainActor () -> Void)?
 
     init() {
         engine.attach(player)
         engine.attach(auditionNode)
         engine.connect(player, to: engine.mainMixerNode, format: format)
         engine.connect(auditionNode, to: engine.mainMixerNode, format: format)
+        // The engine stops itself when the output device changes; scheduled buffers are gone.
+        configurationObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleConfigurationChange() }
+        }
+    }
+
+    deinit {
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+    }
+
+    private func handleConfigurationChange() {
+        let wasActive = state != .stopped && state != .failed
+        stop()
+        if wasActive { onInterrupted?() }
     }
 
     func stop() {
@@ -39,9 +57,13 @@ final class GuideTonePlayer {
         player.pause(); state = .paused
     }
 
-    func resume() {
-        guard state == .paused else { return }
+    /// Returns false when the engine can no longer continue (for example after a device change).
+    @discardableResult
+    func resume() -> Bool {
+        guard state == .paused else { return false }
+        guard engine.isRunning else { stop(); return false }
         player.play(); pausedPosition = nil; state = .playing
+        return true
     }
 
     var position: Double? {

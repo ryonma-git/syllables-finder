@@ -111,6 +111,37 @@ struct MusicTimelineTests {
         #expect(NotationProjection(song: song, measures: measures).issue != nil)
     }
 
+    @Test func noteTiedOverBarlineDoesNotRepeatAccidental() throws {
+        var song = SongDocument()
+        song.music.measures = [
+            .init(number: "1", range: .init(start: .zero, end: try beat(4))),
+            .init(number: "2", range: .init(start: try beat(4), end: try beat(8)))
+        ]
+        var sharp = Note(pitch: 66)
+        sharp.notation = .init(spelling: "F#4")
+        song.music.events = [
+            .init(onset: try beat(3), duration: try beat(2), content: .note(sharp)),   // beats 3–5
+            .init(onset: try beat(5), duration: try beat(1), content: .note(sharp))
+        ]
+        let score = NotationProjection(song: song, measures: MeasureProjection(song: song).slices)
+        #expect(score.issue == nil)
+        let notes = score.pieces.filter { $0.pitch != nil }
+        #expect(notes.map(\.start) == [3, 4, 5])
+        #expect(notes.map(\.tiedTo) == [true, false, false])
+        #expect(notes.map(\.tiedFrom) == [false, true, false])
+        // Measure 2: the tied continuation has no sign, the next F#4 needs its sharp again.
+        #expect(notes.map(\.accidental) == ["♯", nil, "♯"])
+        #expect(score.pieces.filter { $0.pitch == nil }.map(\.start) == [0, 6])  // rests fill the gaps
+    }
+
+    @Test func writingBackSameValueIsNotAnEdit() {
+        var field = TextFieldValue("トゥウィンクル")
+        field.edit("トゥウィンクル")
+        #expect(field.source.kind == .sample && !field.userEdited)
+        field.edit("トゥインクル")
+        #expect(field.source.kind == .manual && field.userEdited)
+    }
+
     @Test func inferredMeasuresSplitAtMeterChange() throws {
         var song = SongDocument()
         song.music.meters = [.init(numerator: 3, denominator: 4), .init(onset: try beat(3), numerator: 6, denominator: 8)]

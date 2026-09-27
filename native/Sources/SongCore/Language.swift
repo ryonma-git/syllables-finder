@@ -17,7 +17,10 @@ public struct GeneratedField<Value: Codable & Equatable & Sendable>: Codable, Eq
     public init(_ value: Value, source: FieldSource = .init(.sample), userEdited: Bool = false) {
         self.value = value; self.source = source; self.userEdited = userEdited
     }
+    /// Records a user edit. Writing back the same value (for example when a text field only gains
+    /// or loses focus) keeps the original source, so sample/AI values are not marked as manual.
     public mutating func edit(_ value: Value) {
+        guard value != self.value else { return }
         self.value = value; source = .init(.manual); userEdited = true
     }
     public mutating func accept(_ value: Value, source: FieldSource) {
