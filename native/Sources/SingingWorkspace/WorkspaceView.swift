@@ -1,6 +1,9 @@
 import SwiftUI
 import SongCore
 import SongServices
+import SongPrint
+import AppKit
+import UniformTypeIdentifiers
 
 enum WorkspaceMode: String, CaseIterable { case reading = "読む", singing = "歌う" }
 enum SingingLayout: String, CaseIterable { case overview = "一覧", detail = "詳細" }
@@ -60,6 +63,8 @@ struct WorkspaceView: View {
     @StateObject private var session = WorkspaceSession()
     @Environment(\.undoManager) private var undoManager
     @State private var addingLyrics = false
+    @State private var showingSamples = false
+    @State private var selectedSampleID = "twinkle"
     @State private var showAnalysis = false
     @State private var playTask: Task<Void, Never>?
     @State private var changingTempo = false
@@ -106,6 +111,11 @@ struct WorkspaceView: View {
                 }.pickerStyle(.segmented).frame(width: 160)
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                Button { showingSamples = true } label: { Label("サンプルを表示", systemImage: "books.vertical") }
+                Menu {
+                    Button("Word (.docx)") { exportSheet(.word) }
+                    Button("PDF (.pdf)") { exportSheet(.pdf) }
+                } label: { Label("印刷用に書き出す", systemImage: "square.and.arrow.up") }
                 Menu {
                     Button("歌詞を追加…", systemImage: "text.badge.plus") { addingLyrics = true }
                     Button("意味を解析…", systemImage: "sparkles") { showAnalysis = true }.disabled(phrase == nil)
@@ -156,6 +166,7 @@ struct WorkspaceView: View {
         }
         .onDisappear { stopPlayback() }
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
+        .sheet(isPresented: $showingSamples) { samplePicker }
         .sheet(isPresented: $showAnalysis) {
             if let phrase {
                 AnalysisSheet(song: song, phrase: phrase, apply: { next in
@@ -266,12 +277,55 @@ struct WorkspaceView: View {
             Image(systemName: "text.word.spacing").font(.system(size: 48, weight: .light)).foregroundStyle(.teal)
             Text("ことばを知る。\n歌う場所が見えてくる。").font(.system(size: 30, weight: .medium, design: .serif)).multilineTextAlignment(.center)
             Text("意味と発音を読み、音節と音符をつなぐ練習帳です。").foregroundStyle(.secondary)
-            Button("きらきら星のサンプルを開く") { openSample(TwinkleSample.make()) }
+            Button("サンプルを表示") { showingSamples = true }
                 .buttonStyle(.borderedProminent).controlSize(.large)
-            Button("短い練習サンプルを開く") { openSample(SampleSongDocument.make()) }
-                .buttonStyle(.plain)
             Button("自分の歌詞で始める") { addingLyrics = true }.buttonStyle(.plain).foregroundStyle(.teal)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var samplePicker: some View {
+        let selected = SampleCatalog.entries.first(where: { $0.id == selectedSampleID }) ?? SampleCatalog.entries[0]
+        let preview = selected.make()
+        return HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("サンプル曲").font(.title2.bold())
+                Text("曲を選ぶと、歌詞・読み・音符を確認できます。")
+                    .font(.callout).foregroundStyle(.secondary)
+                ForEach(SampleCatalog.entries) { entry in
+                    Button { selectedSampleID = entry.id } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(entry.title).font(.headline)
+                            Text(entry.subtitle).font(.caption).foregroundStyle(.secondary)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            .background(selectedSampleID == entry.id ? Color.teal.opacity(0.12) : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 10))
+                    }.buttonStyle(.plain).accessibilityLabel("サンプル \(entry.title)")
+                }
+                Spacer(minLength: 0)
+            }.padding(24).frame(width: 285)
+            Divider()
+            VStack(alignment: .leading, spacing: 14) {
+                Text(selected.title).font(.system(size: 29, weight: .semibold, design: .serif))
+                Text(selected.details).foregroundStyle(.secondary)
+                Divider()
+                Text("歌詞のプレビュー").font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                ForEach(Array(preview.phrases.prefix(3))) { phrase in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(phrase.originalText).font(.system(size: 17, weight: .medium, design: .serif))
+                        Text(phrase.translation.value).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                HStack {
+                    Button("キャンセル", role: .cancel) { showingSamples = false }
+                    Spacer()
+                    Button("この曲を開く") {
+                        openSample(preview)
+                        showingSamples = false
+                    }.buttonStyle(.borderedProminent)
+                }
+            }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }.frame(width: 720, height: 480)
     }
 
     private var lyricsSheet: some View {
@@ -317,6 +371,36 @@ struct WorkspaceView: View {
         if let start = first.first?.range.start, let end = first.last?.range.end {
             session.practiceRange = .init(start: start, end: end)
         } else { session.practiceRange = nil }
+    }
+
+    private enum SheetFormat {
+        case word, pdf
+        var fileExtension: String { self == .word ? "docx" : "pdf" }
+        var type: UTType { self == .pdf ? .pdf : UTType(filenameExtension: "docx")! }
+    }
+
+    private func exportSheet(_ format: SheetFormat) {
+        let snapshot = song
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [format.type]
+        panel.canCreateDirectories = true
+        let title = snapshot.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title).\(format.fileExtension)"
+        panel.message = "A4の教材として、原文・訳・語の意味・IPA・カタカナ読みを書き出します。"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do {
+                    let sheet = PrintSheet(song: snapshot)
+                    let data = try format == .pdf ? PDFSheet.render(sheet) : WordSheet.render(sheet)
+                    try data.write(to: url, options: .atomic)
+                } catch {
+                    session.error = "印刷用ファイルを書き出せませんでした: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 
     private func startGuide() {

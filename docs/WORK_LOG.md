@@ -1,5 +1,13 @@
 # 作業記録 — 2026-09-27
 
+## 追加作業: Swift版のサンプル選択とA4練習シート
+
+- 新規文書とツールバーから開ける「サンプルを表示」画面を追加。きらきら星、Mary Had a Little Lamb、Frère Jacques、Morning lightを選択し、歌詞プレビューから開ける。新しい2曲には単旋律、音節と音符の対応、日本語訳、IPA、カタカナ読みを含む。
+- 現在の文書からA4のWord（docx）またはPDFを書き出す。アプリと同じ青緑の見出しを用い、原文・訳・語の意味・IPA・カタカナ読みを印刷用の表に配置。五線譜の印刷は後続。
+- Swift版の別bundle IDの検証用アプリで、サンプル選択→Maryを開く→歌唱画面→PDF/Word保存を操作。保存したPDFはA4・2ページで日本語テキストを確認し、WordはQuick Lookで日本語と表を目視、python-docxで4表と読みを確認。Microsoft Word本体での表示は未確認。
+- Swiftの30テストとアプリbuild、既存Pythonの12例と23件は成功。PDFはきらきら星のA4・3ページも画像で確認。旧Tkの実画面操作は今回のコード変更対象外のため再実施していない。
+- きらきら星は元データで12小節。最初の「Twin・kle・twin・kle」は4/4拍子の1小節に各1拍で入り、「lit・tle・star」は2小節目。ユーザーが見た配置はこの音符データと一致。拍子や音符を変更した一時検証ファイルを開いていたアプリは終了した。
+
 ## 追加作業: CodexによるClaude引継ぎ後の楽譜・歌唱行の修正
 
 - `codex/native-singing-foundation`の`751a40c`から開始し、作業ツリーclean、`origin`（Inagawa canonical）と`github`の同branchが一致することをfetchで確認。`main`はmergeしていない。

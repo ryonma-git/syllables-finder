@@ -3,6 +3,22 @@ import Testing
 @testable import SongCore
 
 struct SongCoreTests {
+    @Test func sampleCatalogSongsHaveCompleteSyllableNoteAlignment() throws {
+        #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "morning"])
+        for entry in SampleCatalog.entries {
+            let song = entry.make()
+            try song.validate()
+            #expect(song == entry.make())
+            #expect(!song.phrases.isEmpty)
+            if entry.id != "morning" {
+                #expect(song.syllables.count == song.music.events.compactMap(\.note).count)
+                #expect(song.syllables.allSatisfy { !$0.reading.value.isEmpty && !$0.ipa.value.isEmpty })
+                #expect(song.syllables.allSatisfy { syllable in
+                    song.alignments.contains { $0.languageTargets.contains(.init(.syllable, syllable.id)) }
+                })
+            }
+        }
+    }
     @Test func testSampleRoundTripAndDeterministicIDs() throws {
         let doc = SampleSongDocument.make()
         try doc.validate()
@@ -19,6 +35,9 @@ struct SongCoreTests {
         #expect(doc.phrases.count == 6)
         #expect(doc.syllables.count == 42)
         #expect(doc.music.events.count == 42)
+        #expect(doc.music.measures.count == 12)
+        #expect(doc.music.events.prefix(4).allSatisfy { $0.measureID == doc.music.measures[0].id })
+        #expect(doc.music.events.dropFirst(4).prefix(3).allSatisfy { $0.measureID == doc.music.measures[1].id })
         #expect(doc.alignments.count == 42)
         #expect(doc.phrases[0].originalText == "Twinkle, twinkle, little star,")
         #expect(doc.music.events.prefix(7).compactMap { $0.note?.pitch } == [60, 60, 67, 67, 69, 69, 67])
