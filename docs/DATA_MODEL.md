@@ -26,6 +26,14 @@ NoteData: MIDI pitch/velocity/channel/track、任意の notation(spelling/voice/
 Note の拍位置は onset − measure.start の派生値。矛盾する beat を二重保存しない。
 MusicSpan は音楽のみの Section/Phrase。言語 Phrase と同じオブジェクトにしない。
 
+## 声部（schemaVersion 2、[LYRICS_MELODY_DESIGN.md](LYRICS_MELODY_DESIGN.md) §4）
+
+Music.parts: Part(id, name, abbreviation, clef[treble/treble8vb/bass], phraseIDs?)。
+MusicalEvent.partID は v2 で必須、存在する Part を参照。音符があれば Part は1つ以上。
+Part.phraseIDs はその声部が歌う Phrase の順序（繰返し可、nil は全 Phrase を文書順）。
+Phrase.language は行ごとの言語（nil は metadata.sourceLanguage）。FieldSource に rule（規則による候補）を追加。
+v1 は読み込み時に移行し、保存時に元 JSON を `preserved/document-v1.json` に残す。
+
 ## 時間
 
 canonical は四分音符単位の有理数 Beat(numerator/denominator)、既約・非負・分母正。

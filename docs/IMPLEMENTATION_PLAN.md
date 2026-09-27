@@ -2,7 +2,12 @@
 
 設計変更は関連SSOT文書と同じcommitで更新する。今回の実績は WORK_LOG.md。
 
-## 直近の実装
+## 直近の実装（2026-09-28）
+
+[LYRICS_MELODY_DESIGN.md](LYRICS_MELODY_DESIGN.md) の L2〜L7（楽譜の記譜、声部と schema v2、音節分割、割付、ステップ入力、SMF読込）を
+Claude Opus 5.5 が branch `claude/lyrics-melody-alignment` で実装する。ChatGPT 側の作業と分けるため別branch。利用者がChatGPTで検証してから採用を決める。
+
+## 前回の実装
 
 ユーザーの歌唱練習フィードバックを優先し、[SINGING_PRACTICE_PLAN.md](SINGING_PRACTICE_PLAN.md) のS1〜S4をSol中で実装する。
 小節/再生計画 → 連続音声 → 詳細/一覧/鍵盤 → 五線/発音サンプルと検証の順。

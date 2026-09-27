@@ -7,7 +7,9 @@
 
 歌詞の意味・発音を理解し、楽曲のどこで発音するかを練習する macOS-first の
 Language-first Musical Workspace。Reading / Singing は同じ SongDocument の表示。
-音程採点、マイク解析、歌唱生成、本格 DAW/楽譜編集、SNS、同期、共同編集、アカウントは対象外。
+対象は伝承曲に限らず**利用者が実際に歌う曲**。歌詞・MIDI・音源は利用者が権利処理済みのものを用意し、その Mac の文書内にだけ保存する（2026-09-28、[LYRICS_MELODY_DESIGN.md](LYRICS_MELODY_DESIGN.md)）。
+音程採点、歌唱生成、本格 DAW/楽譜編集、SNS、同期、共同編集、アカウントは対象外。
+参考音源の解析は割付の手がかりとしてのみ後続で扱う（採点ではない）。
 既存 Python/Tk 教材アプリは独立して継続利用できること。
 
 ## 要件と受入条件
@@ -28,8 +30,19 @@ Language-first Musical Workspace。Reading / Singing は同じ SongDocument の�
 | R12 | 永続化 | versioned Codable package、保存/再読込、future schema 拒否、参照整合性検証、source 資料保持 |
 | R13 | 再生・出力 | MIDI ガイド音、Word/Syllable/Phrase の音声、A4 interlinear 教材。歌唱生成はしない |
 | R14 | 品質 | macOS 標準操作、VoiceOver、キーボード、文字拡大、十分なコントラスト、必要範囲だけ描画 |
+| R15 | 音節分割 | 歌詞入力時に言語別の規則で音節候補を作る。独・西・仏→伊・羅・露→英・日・韓（中は試験的）。未対応言語でも手動で区切れる |
+| R16 | 声部 | 1文書に複数声部。共通の小節・拍で同期。単声は声部1つ。声部ごとの書出し/取込み |
+| R17 | 割付 | 一音符一音節を基本仮説に、タイ・メリスマ・エリジオンを候補化。人の確定を保護し前後だけ再計算 |
+| R18 | 旋律入力 | MIDI鍵盤/画面鍵盤のステップ入力、SMF読込。リアルタイム録音・クオンタイズは後続 |
+| R19 | 楽譜 | 譜線間隔を基準にした記譜（符頭・符幹・旗/連桁・加線・臨時記号・休符・小節線・音部/拍子・歌詞）。複数声部は段で表示 |
+| R20 | 参考音源 | 原曲・自分の歌唱・部分の歌い直しを割付の手がかりにする（後続） |
 
-## 次の実装範囲（設計済み）
+## 次の実装範囲（2026-09-28）
+
+R15〜R20 の設計と段階（L1〜L10）は [LYRICS_MELODY_DESIGN.md](LYRICS_MELODY_DESIGN.md)。
+作業branch `claude/lyrics-melody-alignment`。以下は前回までの範囲の記録。
+
+## 前回の実装範囲（設計済み）
 
 R02/R05/R06/R13の歌唱練習を [SINGING_PRACTICE_PLAN.md](SINGING_PRACTICE_PLAN.md) に具体化した。
 一般的な楽譜編集ではなく単旋律の練習用五線表示。画面内鍵盤、カタカナ読み、曲通し再生を実装する。
@@ -49,7 +62,7 @@ iPadOS は今回は build 対象外。core と services に SwiftUI/AppKit 依�
 ## サンプル
 
 新規作成の短文「Morning light, softly glow.」と単純な音列を使用。
-独立した日本語「ひかり」の例でモーラ構造も検証。授業入力・既存楽曲の転載は追加しない。
+独立した日本語「ひかり」の例でモーラ構造も検証。授業入力・既存楽曲の転載は**内蔵サンプル・テストには**追加しない（利用者が自分の文書で扱うのは可）。
 追加済みの「Twinkle, Twinkle, Little Star」は12小節・42音の伝承曲サンプル（ADR009）。次の実装でIPA/読みを補う。
 
 ## 調査した既存資産
