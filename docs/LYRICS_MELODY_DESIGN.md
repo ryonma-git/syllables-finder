@@ -217,13 +217,14 @@ MusicXML は MUSIC_IO のゲートに従う。音声からの旋律推定は、�
 | L7 | SMF読込 | MUSIC_IOのMIDIテストゲート | 実装・テスト（`773ea77`）。読込画面は実画面未確認 |
 | L8 | リアルタイム録音・クオンタイズ | 実機MIDI鍵盤で確認 | 未着手 |
 | L9 | 参考音源・歌声からの旋律推定 | — | 未着手 |
-| L10 | MusicXML入出力、楽譜の印刷 | MUSIC_IOのXMLテストゲート | 未着手 |
+| L10 | MusicXML入出力、楽譜の印刷 | MUSIC_IOのXMLテストゲート | 楽譜PDFは実装（branch `claude/score-pdf-export`、2026-10-02）。MusicXMLは未着手 |
 
 状態列は実装後に WORK_LOG と合わせて更新する。実機（MIDI鍵盤、スピーカー、IME）の確認が要るものは、確認するまで「未確認」と記録する。
 
 ## 11. 検証の手段（2026-09-28 追加）
 
 - `native/scripts/swift-tool.sh build --product SongStaffTool` の後、`<bin>/SongStaffTool twinkle out.png`（`twinkle`/`mary`/`frere`/`morning` または `.songproj` のパス、第3引数で1段の小節数）で、画面と同じ記譜エンジン・描画の楽譜をPNGにする。
+- 楽譜PDF: `<bin>/SongStaffTool frere out.pdf`。利用者の素材から直接: `<bin>/SongStaffTool --lyrics 歌詞.txt --language en --midi 曲.mid [--track 0,1] [--grid 0.25|none] [--title 題名] [--songproj 保存先.songproj] out.pdf`（歌詞は1行1フレーズ、空行で節を区切る。トラック未指定なら単旋律で音の多いトラックを旋律とする）。素材と出力は利用者のMacだけに置き、Gitに入れない。
 - アプリは起動引数 `-SingingWorkspaceQA staff`（`roll`、`detail-staff` も可）で「歌う」＋楽譜表示から開く。画面操作ツールなしのスクリーンショット確認用。例: `open -n -a "<確認用app>" <文書のコピー.songproj> --args -SingingWorkspaceQA staff`。
 - 2026-09-28 の実装時は画面がロックされており、実画面の操作確認はできなかった。`ScoreRow` は同じSwiftUIコードを ImageRenderer でオフスクリーン描画して確認した（ボタン等のAppKit部品の見た目・操作は未確認）。
 

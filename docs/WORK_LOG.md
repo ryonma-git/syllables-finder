@@ -1,5 +1,13 @@
 # 作業記録 — 2026-09-27
 
+## 2026-10-02 追加作業: Claudeによる楽譜PDF書き出し（branch `claude/score-pdf-export`）
+
+- 共有の作業フォルダはCodexが `codex/lyrics-alignment-review-fixes`（`45e9f2f`、未commitなし）で使用中だったため切り替えず、別のworktree `/Users/ryon/Projects-Inagawa/syllables-finder-claude` を `45e9f2f` から作成した。
+- `SongNotation/ScoreSheet`: A4の楽譜PDF。全声部の五線（括弧・略称）、五線下の歌詞・読み（任意でIPA）、段ごとの訳、小節番号、ページ番号。各小節に必要な幅（音符と歌詞が重ならない幅）から、段の詰まり具合が均等になるよう改行を動的計画法で決め、段を行幅に揃える。文字はPDF内の検索・コピーができる実テキスト。
+- アプリ: 「印刷用に書き出す」に「楽譜 PDF（五線譜と歌詞）」を追加（読み・IPAの表示設定を引き継ぐ）。従来の読解シートWord/PDFは名称を補って残す。
+- `SongStaffTool`: PDF/PNG出力と、歌詞テキスト＋MIDIファイル → 音節分割 → 声部 → 割付 → 楽譜PDF を1コマンドで行うモード。
+- 検証: Swift 76テスト（SongNotation 5を含む）成功、アプリbuild成功。PDFはサンプルと自作2声部曲で画像確認。アプリのメニューからの書き出しは実画面未確認。
+
 ## 2026-09-28 追加作業: Claudeによる歌詞×旋律の割付・多言語・声部・楽譜（branch `claude/lyrics-melody-alignment`）
 
 - ChatGPT（GPT-6 Astra高）との設計相談が利用上限で中断したため、利用者の依頼でClaude Opus 5.5が意思を引き継いだ。ChatGPT側と分けるため `codex/native-singing-foundation`（`1a0af6b`）から別branchを作成。`main`・Codexの作業フォルダ（`~/.codex/worktrees/53dd`、clean）には触れていない。

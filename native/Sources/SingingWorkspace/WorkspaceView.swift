@@ -2,6 +2,7 @@ import SwiftUI
 import SongCore
 import SongServices
 import SongPrint
+import SongNotation
 import AppKit
 import UniformTypeIdentifiers
 
@@ -125,8 +126,11 @@ struct WorkspaceView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { showingSamples = true } label: { Label("サンプルを表示", systemImage: "books.vertical") }
                 Menu {
-                    Button("Word (.docx)") { exportSheet(.word) }
-                    Button("PDF (.pdf)") { exportSheet(.pdf) }
+                    Button("楽譜 PDF（五線譜と歌詞）") { exportSheet(.score) }
+                        .disabled(!song.music.events.contains { $0.note != nil })
+                    Divider()
+                    Button("読解シート Word (.docx)") { exportSheet(.word) }
+                    Button("読解シート PDF (.pdf)") { exportSheet(.pdf) }
                 } label: { Label("印刷用に書き出す", systemImage: "square.and.arrow.up") }
                 Menu {
                     Button("歌詞を追加…", systemImage: "text.badge.plus") { addingLyrics = true }
@@ -494,9 +498,9 @@ struct WorkspaceView: View {
     }
 
     private enum SheetFormat {
-        case word, pdf
+        case word, pdf, score
         var fileExtension: String { self == .word ? "docx" : "pdf" }
-        var type: UTType { self == .pdf ? .pdf : UTType(filenameExtension: "docx")! }
+        var type: UTType { self == .word ? UTType(filenameExtension: "docx")! : .pdf }
     }
 
     private func exportSheet(_ format: SheetFormat) {
@@ -507,14 +511,24 @@ struct WorkspaceView: View {
         let title = snapshot.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title).\(format.fileExtension)"
-        panel.message = "A4の教材として、原文・訳・語の意味・IPA・カタカナ読みを書き出します。"
+        panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title)\(format == .score ? "（楽譜）" : "").\(format.fileExtension)"
+        panel.message = format == .score
+            ? "A4の楽譜として、全声部の五線譜・歌詞・読み・訳を書き出します。"
+            : "A4の教材として、原文・訳・語の意味・IPA・カタカナ読みを書き出します。"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 do {
-                    let sheet = PrintSheet(song: snapshot)
-                    let data = try format == .pdf ? PDFSheet.render(sheet) : WordSheet.render(sheet)
+                    let data: Data
+                    switch format {
+                    case .score:
+                        var options = ScoreSheet.Options()
+                        options.showReading = session.showReading
+                        options.showIPA = session.showIPA
+                        data = try ScoreSheet(song: snapshot, options: options).pdfData()
+                    case .pdf: data = try PDFSheet.render(PrintSheet(song: snapshot))
+                    case .word: data = try WordSheet.render(PrintSheet(song: snapshot))
+                    }
                     try data.write(to: url, options: .atomic)
                 } catch {
                     session.error = "印刷用ファイルを書き出せませんでした: \(error.localizedDescription)"
