@@ -39,14 +39,14 @@ private final class PDFPainter {
     private let dark = NSColor(calibratedWhite: 0.14, alpha: 1)
     private let muted = NSColor(calibratedWhite: 0.39, alpha: 1)
     private let line = NSColor(calibratedWhite: 0.85, alpha: 1)
-    private let margin: CGFloat = 46
+    private let margin: CGFloat = 40
     private var page = 0
     private var y: CGFloat = 0
     private var priorGraphics: NSGraphicsContext?
     private var section = ""
     private var contentWidth: CGFloat { size.width - 2 * margin }
-    private var footerTop: CGFloat { size.height - 54 }
-    private let wordGap: CGFloat = 11
+    private var footerTop: CGFloat { size.height - 42 }
+    private let wordGap: CGFloat = 7
 
     init(context: CGContext, title: String, pageSize: CGSize) {
         self.context = context; self.title = title; self.size = pageSize
@@ -72,14 +72,14 @@ private final class PDFPainter {
         context.scaleBy(x: 1, y: -1)
         priorGraphics = NSGraphicsContext.current
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
-        drawText("SINGING WORKSPACE", x: margin, y: 34, width: contentWidth,
+        drawText("SINGING WORKSPACE", x: margin, y: 22, width: contentWidth,
                  font: .systemFont(ofSize: 9, weight: .semibold), color: teal, tracking: 1.6)
-        drawText(title, x: margin, y: 52, width: contentWidth,
-                 font: .systemFont(ofSize: 22, weight: .semibold), color: dark)
-        drawText("原文  /  音節  /  IPA  /  カタカナ  /  語の意味  /  文の意味", x: margin, y: 85,
+        drawText(title, x: margin, y: 38, width: contentWidth,
+                 font: .systemFont(ofSize: 20, weight: .semibold), color: dark)
+        drawText("原文  /  音節  /  IPA  /  カタカナ  /  語の意味  /  文の意味", x: margin, y: 70,
                  width: contentWidth, font: .systemFont(ofSize: 9), color: muted)
-        fill(CGRect(x: margin, y: 108, width: contentWidth, height: 1), line)
-        y = 125
+        fill(CGRect(x: margin, y: 91, width: contentWidth, height: 1), line)
+        y = 101
     }
 
     private func endPage() {
@@ -104,25 +104,25 @@ private final class PDFPainter {
     private func drawPhrase(_ phrase: PrintPhrase, index: Int) {
         let rows = flow(phrase.words)
         let headingHeight = textHeight(phrase.original, width: contentWidth - 30,
-                                       font: .systemFont(ofSize: 15, weight: .semibold)) + 11
+                                       font: .systemFont(ofSize: 14, weight: .semibold)) + 6
         let translationHeight = phrase.translation.isEmpty ? 0 :
-            textHeight(phrase.translation, width: contentWidth - 78, font: .systemFont(ofSize: 10.5)) + 11
-        let wholeHeight = headingHeight + rows.reduce(CGFloat(0)) { $0 + $1.height + 8 }
-            + CGFloat(translationHeight) + 20 + (phrase.section == section ? 0 : 24)
-        if wholeHeight < footerTop - 135 && y + wholeHeight > footerTop - 12 { endPage(); startPage() }
-        ensure(headingHeight + (rows.first?.height ?? 0) + 14)
+            textHeight(phrase.translation, width: contentWidth - 78, font: .systemFont(ofSize: 10)) + 5
+        let wholeHeight = headingHeight + rows.reduce(CGFloat(0)) { $0 + $1.height + 4 }
+            + CGFloat(translationHeight) + 10 + (phrase.section == section ? 0 : 16)
+        if wholeHeight < footerTop - 111 && y + wholeHeight > footerTop - 10 { endPage(); startPage() }
+        ensure(headingHeight + (rows.first?.height ?? 0) + 8)
         if section != phrase.section {
             section = phrase.section
             drawText(section, x: margin, y: y, width: contentWidth,
                      font: .systemFont(ofSize: 10, weight: .bold), color: teal)
-            y += 24
+            y += 16
         }
         drawText(String(format: "%02d", index + 1), x: margin, y: y + 1, width: 28,
                  font: .monospacedDigitSystemFont(ofSize: 10, weight: .semibold), color: teal)
         y += drawText(phrase.original, x: margin + 30, y: y, width: contentWidth - 30,
-                      font: .systemFont(ofSize: 15, weight: .semibold), color: dark) + 11
+                      font: .systemFont(ofSize: 14, weight: .semibold), color: dark) + 6
         for row in rows {
-            if ensure(row.height + 9) {
+            if ensure(row.height + 5) {
                 drawText("\(phrase.section)  /  \(String(format: "%02d", index + 1))（続き）",
                          x: margin, y: y, width: contentWidth,
                          font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
@@ -133,17 +133,17 @@ private final class PDFPainter {
                 drawWord(word, x: x, y: y, width: width, row: row)
                 x += width + wordGap
             }
-            y += row.height + 8
+            y += row.height + 4
         }
         if !phrase.translation.isEmpty {
-            ensure(CGFloat(translationHeight) + 7)
+            ensure(CGFloat(translationHeight) + 5)
             drawText("文の意味", x: margin + 30, y: y + 2, width: 54,
                      font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
             drawText(phrase.translation, x: margin + 84, y: y, width: contentWidth - 84,
-                     font: .systemFont(ofSize: 10.5), color: dark)
+                     font: .systemFont(ofSize: 10), color: dark)
             y += CGFloat(translationHeight)
         }
-        y += 20
+        y += 10
     }
 
     private struct WordRow {
@@ -153,7 +153,7 @@ private final class PDFPainter {
         var lyricHeight: CGFloat
         var ipaHeight: CGFloat
         var readingHeight: CGFloat
-        var height: CGFloat { meaningHeight + lyricHeight + ipaHeight + readingHeight + 7 }
+        var height: CGFloat { meaningHeight + lyricHeight + ipaHeight + readingHeight + 5 }
     }
 
     private func flow(_ words: [PrintWord]) -> [WordRow] {
@@ -169,7 +169,7 @@ private final class PDFPainter {
                 lyricHeight: zip(current, widths).map { richHeight(segmented($0.0), width: $0.1) }.max() ?? 18,
                 ipaHeight: zip(current, widths).map { textHeight($0.0.ipa.isEmpty ? "IPA未設定" : $0.0.ipa,
                     width: $0.1, font: .systemFont(ofSize: 8.5)) }.max() ?? 0,
-                readingHeight: zip(current, widths).map { textHeight($0.0.reading.isEmpty ? "読み未設定" : $0.0.reading,
+                readingHeight: zip(current, widths).map { textHeight($0.0.reading.isEmpty ? "カタカナ未設定" : $0.0.reading,
                     width: $0.1, font: .systemFont(ofSize: 8.5)) }.max() ?? 0))
             current = []; widths = []; used = 0
         }
@@ -197,7 +197,7 @@ private final class PDFPainter {
         let ipaY = y + row.meaningHeight + row.lyricHeight + 3
         drawText(word.ipa.isEmpty ? "IPA未設定" : word.ipa,
                  x: x, y: ipaY, width: width, font: .systemFont(ofSize: 8.5), color: dark)
-        drawText(word.reading.isEmpty ? "読み未設定" : word.reading,
+        drawText(word.reading.isEmpty ? "カタカナ未設定" : word.reading,
                  x: x, y: ipaY + row.ipaHeight + 2, width: width,
                  font: .systemFont(ofSize: 8.5), color: muted)
     }

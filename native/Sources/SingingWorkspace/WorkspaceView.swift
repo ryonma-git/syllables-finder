@@ -91,10 +91,10 @@ struct WorkspaceView: View {
                 if let phrase {
                     HStack(alignment: .top, spacing: 0) {
                         VStack(alignment: .leading, spacing: 0) {
-                            phraseHeader(phrase)
                             if session.mode == .reading {
-                                ReadingView(song: song, phrase: phrase, session: session)
+                                ReadingView(song: song, session: session, mutate: mutate)
                             } else {
+                                phraseHeader(phrase)
                                 SingingView(song: song, phrase: phrase, session: session,
                                             applyRange: applyPracticeRange, seek: seek)
                             }

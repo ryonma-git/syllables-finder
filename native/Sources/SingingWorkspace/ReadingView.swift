@@ -4,25 +4,78 @@ import SongPrint
 
 struct ReadingView: View {
     let song: SongDocument
-    let phrase: Phrase
     @ObservedObject var session: WorkspaceSession
+    let mutate: SongMutation
     var body: some View {
-        ScrollView {
-            LyricsFlowLayout(horizontalSpacing: 11 * session.textScale, verticalSpacing: 18 * session.textScale) {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 13 * session.textScale) {
+                    HStack(spacing: 12) {
+                        Text("歌詞を読む").font(.system(size: 16 * session.textScale, weight: .semibold))
+                        Text("語の意味 → 原文・音節 → IPA → カタカナ")
+                            .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
+                    }.padding(.bottom, 2)
+                    ForEach(song.sections) { section in
+                        VStack(alignment: .leading, spacing: 8 * session.textScale) {
+                            Text(section.title)
+                                .font(.system(size: 12 * session.textScale, weight: .semibold))
+                                .foregroundStyle(.teal)
+                            ForEach(section.phraseIDs.compactMap { song.phrase($0) }) { phrase in
+                                phraseLine(phrase).id(phrase.id)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 22).padding(.top, 16).padding(.bottom, 24)
+            }
+            .onChange(of: session.phraseID) { _, id in
+                if let id { withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .top) } }
+            }
+            .onChange(of: song.id) { _, _ in
+                if let first = song.phrases.first { proxy.scrollTo(first.id, anchor: .top) }
+            }
+            .onAppear {
+                if let first = song.phrases.first { proxy.scrollTo(first.id, anchor: .top) }
+            }
+        }
+    }
+
+    private func phraseLine(_ phrase: Phrase) -> some View {
+        VStack(alignment: .leading, spacing: 3 * session.textScale) {
+            Text(phrase.originalText)
+                .font(.system(size: 20 * session.textScale, weight: .semibold, design: .serif))
+                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            TextField("文の意味を追加", text: Binding(
+                get: { song.phrase(phrase.id)?.translation.value ?? "" },
+                set: { value in mutate("全文訳を編集") { doc in
+                    if let index = doc.phrases.firstIndex(where: { $0.id == phrase.id }) {
+                        doc.phrases[index].translation.edit(value)
+                    }
+                } }
+            ))
+            .textFieldStyle(.plain)
+            .font(.system(size: 12 * session.textScale))
+            .foregroundStyle(.secondary)
+            LyricsFlowLayout(horizontalSpacing: 8 * session.textScale, verticalSpacing: 5 * session.textScale) {
                 ForEach(song.words(in: phrase)) { word in
                     Button {
+                        session.phraseID = phrase.id
                         session.wordID = word.id; session.syllableID = nil; session.showInspector = true
                     } label: {
                         InterlinearWord(word: word, syllables: song.syllables(in: word),
                                         language: phrase.language ?? song.metadata.sourceLanguage,
                                         selected: session.wordID == word.id, scale: session.textScale)
                     }
-                        .buttonStyle(.plain).accessibilityLabel("\(word.surface)、\(word.contextualMeaning.value)、詳細を編集")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.syllables(in: word).map(\.reading.value).joined(separator: "・"))、詳細を編集")
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 30).padding(.bottom, 30)
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(.vertical, 5 * session.textScale)
+        .padding(.horizontal, 8 * session.textScale)
+        .background(session.phraseID == phrase.id ? Color.teal.opacity(0.045) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 5))
     }
 }
 
@@ -37,14 +90,14 @@ private struct InterlinearWord: View {
                   syllables: syllables.map { PrintSyllable(text: $0.text.value, language: language) },
                   ipa: syllables.isEmpty || syllables.contains(where: { $0.ipa.value.isEmpty }) ? "" :
                     "/" + syllables.map(\.ipa.value).joined(separator: "·") + "/",
-                  reading: syllables.isEmpty || syllables.contains(where: { $0.reading.value.isEmpty }) ? "" :
-                    syllables.map(\.reading.value).joined(separator: "・"))
+                  reading: syllables.allSatisfy { $0.reading.value.isEmpty } ? "" :
+                    syllables.map { $0.reading.value.isEmpty ? "□" : $0.reading.value }.joined(separator: "・"))
     }
     private var columnWidth: CGFloat {
         let item = printWord
-        let lyricWidth = CGFloat(item.segmented.count) * 13.5 * scale
-        let annotationWidth = CGFloat(max(item.meaning.count, item.ipa.count, item.reading.count)) * 8.5 * scale
-        return max(54 * scale, min(180 * scale, max(lyricWidth, annotationWidth) + 5))
+        let lyricWidth = CGFloat(item.segmented.count) * 11.5 * scale
+        let annotationWidth = CGFloat(max(item.meaning.count, item.ipa.count, item.reading.count)) * 7.5 * scale
+        return max(50 * scale, min(190 * scale, max(lyricWidth, annotationWidth) + 8))
     }
     private var coloredLyric: Text {
         printWord.displayFragments.reduce(Text("")) { result, fragment in
@@ -53,16 +106,15 @@ private struct InterlinearWord: View {
     }
     var body: some View {
         let item = printWord
-        VStack(alignment: .leading, spacing: 2 * scale) {
+        VStack(alignment: .leading, spacing: 1 * scale) {
             Text(item.meaning.isEmpty ? "意味未設定" : item.meaning)
-                .font(.system(size: 11 * scale)).foregroundStyle(.secondary).lineLimit(2)
-                .frame(height: 29 * scale, alignment: .bottomLeading)
-            coloredLyric.font(.system(size: 22 * scale, weight: .semibold, design: .serif))
-                .lineLimit(1).minimumScaleFactor(0.75)
+                .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+            coloredLyric.font(.system(size: 18 * scale, weight: .semibold, design: .serif))
+                .lineLimit(1).minimumScaleFactor(0.85)
             Text(item.ipa.isEmpty ? "IPA未設定" : item.ipa)
-                .font(.system(size: 11 * scale)).foregroundStyle(.secondary).lineLimit(1)
-            Text(item.reading.isEmpty ? "読み未設定" : item.reading)
-                .font(.system(size: 11 * scale)).foregroundStyle(.secondary).lineLimit(1)
+                .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+            Text(item.reading.isEmpty ? "カタカナ未設定" : item.reading)
+                .font(.system(size: 11 * scale, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
             Rectangle().fill(selected ? Color.teal : .clear).frame(height: 2 * scale)
         }
         .frame(width: columnWidth, alignment: .leading)

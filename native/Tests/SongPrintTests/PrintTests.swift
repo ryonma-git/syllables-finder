@@ -38,4 +38,13 @@ struct PrintTests {
         let french = PrintSyllable(text: "Frè", language: "fr")
         #expect(french.fragments == [PrintFragment(text: "Frè", isVowelNucleus: false)])
     }
+
+    @Test func partialKatakanaRemainsVisible() throws {
+        var song = SampleCatalog.entries[1].make()
+        let first = try #require(song.words.first?.syllableIDs.first)
+        let index = try #require(song.syllables.firstIndex { $0.id == first })
+        song.syllables[index].reading.edit("")
+        let word = try #require(PrintSheet(song: song).phrases.first?.words.first)
+        #expect(word.reading == "□・リー")
+    }
 }

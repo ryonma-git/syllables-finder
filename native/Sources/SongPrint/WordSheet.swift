@@ -36,7 +36,7 @@ public enum WordSheet {
 
     private static func document(_ sheet: PrintSheet) -> String {
         var body = paragraph(sheet.title, style: "Title")
-        body += paragraph("青緑は綴り上の母音核の目安。· は音節の区切りです。", style: "Translation")
+        body += paragraph("語の意味 → 原文・音節 → IPA → カタカナ。青緑は母音核、· は音節の区切りです。", style: "Translation")
         if sheet.phrases.isEmpty { body += paragraph("歌詞はまだありません。", style: "Translation") }
         var lastSection = ""
         for phrase in sheet.phrases {
@@ -55,12 +55,11 @@ public enum WordSheet {
                 // Word merges consecutive tables with different grids unless a paragraph separates them.
                 body += paragraph("", style: "RowGap")
             }
-            body += paragraph("", style: "Gap")
         }
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
         <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-          <w:body>\(body)<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1170" w:right="1043" w:bottom="1080" w:left="1043" w:header="520" w:footer="520"/></w:sectPr></w:body>
+          <w:body>\(body)<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="860" w:bottom="850" w:left="860" w:header="450" w:footer="450"/></w:sectPr></w:body>
         </w:document>
         """
     }
@@ -93,7 +92,7 @@ public enum WordSheet {
             \(paragraph(word.meaning.isEmpty ? "意味未設定" : word.meaning, style: "Gloss"))
             \(syllableParagraph(word))
             \(paragraph(word.ipa.isEmpty ? "IPA未設定" : word.ipa, style: "Annotation"))
-            \(paragraph(word.reading.isEmpty ? "読み未設定" : word.reading, style: "Annotation"))
+            \(paragraph(word.reading.isEmpty ? "カタカナ未設定" : word.reading, style: "Annotation"))
             </w:tc>
             """
         }.joined()
@@ -182,15 +181,15 @@ public enum WordSheet {
     <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
       <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Hiragino Sans" w:hAnsi="Hiragino Sans" w:eastAsia="Hiragino Sans"/><w:lang w:eastAsia="ja-JP"/><w:sz w:val="20"/><w:color w:val="242424"/></w:rPr></w:rPrDefault></w:docDefaults>
       <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:after="100"/></w:pPr></w:style>
-      <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="300"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="242424"/></w:rPr></w:style>
-      <w:style w:type="paragraph" w:styleId="Section"><w:name w:val="Section"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="220" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="20"/><w:color w:val="0A9CA6"/></w:rPr></w:style>
-      <w:style w:type="paragraph" w:styleId="Phrase"><w:name w:val="Phrase"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="110" w:after="70"/></w:pPr><w:rPr><w:b/><w:sz w:val="27"/><w:color w:val="242424"/></w:rPr></w:style>
-      <w:style w:type="paragraph" w:styleId="Translation"><w:name w:val="Translation"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="130"/></w:pPr><w:rPr><w:sz w:val="20"/><w:color w:val="686868"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="180"/></w:pPr><w:rPr><w:b/><w:sz w:val="36"/><w:color w:val="242424"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Section"><w:name w:val="Section"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="120" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="20"/><w:color w:val="0A9CA6"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Phrase"><w:name w:val="Phrase"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="35"/></w:pPr><w:rPr><w:b/><w:sz w:val="27"/><w:color w:val="242424"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Translation"><w:name w:val="Translation"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="50"/></w:pPr><w:rPr><w:sz w:val="20"/><w:color w:val="686868"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Gloss"><w:name w:val="Gloss"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="15"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="686868"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Lyric"><w:name w:val="Lyric"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="10"/></w:pPr><w:rPr><w:b/><w:sz w:val="23"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Annotation"><w:name w:val="Annotation"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="686868"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Continuation"><w:name w:val="Continuation"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="55" w:after="15"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="0A9CA6"/></w:rPr></w:style>
-      <w:style w:type="paragraph" w:styleId="RowGap"><w:name w:val="RowGap"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0"/><w:keepNext/></w:pPr><w:rPr><w:sz w:val="4"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="RowGap"><w:name w:val="RowGap"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr><w:rPr><w:sz w:val="4"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Gap"><w:name w:val="Gap"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="50"/></w:pPr><w:rPr><w:sz w:val="6"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Header"><w:name w:val="Header"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="16"/><w:color w:val="0A9CA6"/><w:spacing w:val="20"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Footer"><w:name w:val="Footer"/><w:basedOn w:val="Normal"/><w:pPr><w:tabs><w:tab w:val="right" w:pos="9800"/></w:tabs></w:pPr><w:rPr><w:sz w:val="15"/><w:color w:val="686868"/></w:rPr></w:style>

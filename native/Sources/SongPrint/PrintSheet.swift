@@ -101,8 +101,8 @@ public struct PrintSheet: Sendable {
                                      },
                                      ipa: syllables.isEmpty || syllables.contains(where: { $0.ipa.value.isEmpty })
                                         ? "" : syllables.map(\.ipa.value).joined(separator: "·").wrappedInSlashes,
-                                     reading: syllables.isEmpty || syllables.contains(where: { $0.reading.value.isEmpty })
-                                        ? "" : syllables.map(\.reading.value).joined(separator: "・"))
+                                     reading: syllables.allSatisfy { $0.reading.value.isEmpty }
+                                        ? "" : syllables.map { $0.reading.value.isEmpty ? "□" : $0.reading.value }.joined(separator: "・"))
                 })
             }
         }
