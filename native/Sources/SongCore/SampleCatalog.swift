@@ -144,9 +144,9 @@ public enum SampleCatalog {
                             .init(text: "Little lamb, little lamb,", translation: "小さな子羊、小さな子羊。",
                                   words: second, pitches: [62, 62, 62, 64, 67, 67], durations: [1, 1, 2, 1, 1, 2]),
                             .init(text: "Mary had a little lamb,", translation: "メリーには小さな子羊がいました。",
-                                  words: first, pitches: [64, 62, 60, 62, 64, 64, 64], durations: [1, 1, 1, 1, 1, 1, 2]),
+                                  words: first, pitches: [64, 62, 60, 62, 64, 64, 64], durations: [1, 1, 1, 1, 1, 1, 1]),
                             .init(text: "Its fleece was white as snow.", translation: "その毛は雪のように白かったのです。",
-                                  words: last, pitches: [64, 62, 62, 64, 62, 60], durations: [1, 1, 1, 1, 1, 3])
+                                  words: last, pitches: [64, 62, 62, 64, 62, 60], durations: [1, 1, 1, 1, 1, 4])
                         ])
     }
 

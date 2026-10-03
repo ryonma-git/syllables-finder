@@ -19,6 +19,26 @@ struct SongCoreTests {
             }
         }
     }
+
+    @Test func maryEndsWithTheExpectedPickupAndFourBeatTonic() throws {
+        let song = try #require(SampleCatalog.entries.first { $0.id == "mary" }).make()
+        let notes = song.music.events
+        #expect(notes.count == 26)
+        #expect(notes.map { $0.note?.pitch } == [
+            64, 62, 60, 62, 64, 64, 64,
+            62, 62, 62, 64, 67, 67,
+            64, 62, 60, 62, 64, 64, 64,
+            64, 62, 62, 64, 62, 60
+        ])
+        let b1 = try Beat(1), b4 = try Beat(4), b22 = try Beat(22)
+        let b23 = try Beat(23), b28 = try Beat(28), b32 = try Beat(32)
+        #expect(song.phrases[2].timeRange?.end == b23)
+        #expect(song.phrases[3].timeRange?.start == b23)
+        #expect(notes[19].onset == b22 && notes[19].duration == b1) // lamb
+        #expect(notes[20].onset == b23 && notes[20].duration == b1) // Its
+        #expect(notes[25].onset == b28 && notes[25].duration == b4) // snow
+        #expect(MeasureProjection.songEnd(song) == b32)
+    }
     @Test func testSampleRoundTripAndDeterministicIDs() throws {
         let doc = SampleSongDocument.make()
         try doc.validate()

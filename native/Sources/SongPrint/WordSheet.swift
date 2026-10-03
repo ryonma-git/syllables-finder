@@ -36,6 +36,7 @@ public enum WordSheet {
 
     private static func document(_ sheet: PrintSheet) -> String {
         var body = paragraph(sheet.title, style: "Title")
+        body += paragraph("青緑は綴り上の母音核の目安。· は音節の区切りです。", style: "Translation")
         if sheet.phrases.isEmpty { body += paragraph("歌詞はまだありません。", style: "Translation") }
         var lastSection = ""
         for phrase in sheet.phrases {
@@ -59,35 +60,51 @@ public enum WordSheet {
     }
 
     private static func table(_ words: [PrintWord]) -> String {
-        let widths = [2000, 2000, 2800, 3000]
+        let widths = [1500, 2000, 1700, 2200, 2400]
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         let keepWholeTable = words.count <= 8
-        let heading = row(["語", "意味", "IPA", "カタカナ読み"], widths: widths,
+        let heading = row(["語", "音節・母音核", "意味", "IPA", "カタカナ読み"], widths: widths,
                           style: "TableHead", shaded: true, isHeader: true, keepNext: true)
         let rows = words.enumerated().map { index, word in
-            row([word.original, word.meaning, word.ipa, word.reading], widths: widths,
+            row([word.original, word.segmented, word.meaning, word.ipa, word.reading], widths: widths,
                 style: "Cell", shaded: index.isMultiple(of: 2), isHeader: false,
-                keepNext: keepWholeTable && index < words.count - 1)
+                keepNext: keepWholeTable && index < words.count - 1, annotatedWord: word)
         }.joined()
         return """
-        <w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="fixed"/>
+        <w:tbl><w:tblPr><w:tblW w:w="9800" w:type="dxa"/><w:tblLayout w:type="fixed"/>
         <w:tblBorders><w:bottom w:val="single" w:sz="4" w:color="D9DDDF"/><w:insideH w:val="single" w:sz="3" w:color="D9DDDF"/></w:tblBorders></w:tblPr>
         <w:tblGrid>\(grid)</w:tblGrid>\(heading)\(rows)</w:tbl>
         """
     }
 
     private static func row(_ values: [String], widths: [Int], style: String,
-                            shaded: Bool, isHeader: Bool, keepNext: Bool) -> String {
+                            shaded: Bool, isHeader: Bool, keepNext: Bool,
+                            annotatedWord: PrintWord? = nil) -> String {
         let cells = values.enumerated().map { index, value in
             let fill = shaded ? (isHeader ? "0A9CA6" : "F2FAFA") : "FFFFFF"
             let safe = value.isEmpty ? "-" : value
+            let contents = index == 1 && annotatedWord != nil
+                ? syllableParagraph(annotatedWord!, keepNext: keepNext)
+                : paragraph(safe, style: style, keepNext: keepNext)
             return """
             <w:tc><w:tcPr><w:tcW w:w="\(widths[index])" w:type="dxa"/><w:shd w:fill="\(fill)"/>
             <w:tcMar><w:top w:w="95" w:type="dxa"/><w:left w:w="90" w:type="dxa"/><w:bottom w:w="95" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tcMar></w:tcPr>
-            \(paragraph(safe, style: style, keepNext: keepNext))</w:tc>
+            \(contents)</w:tc>
             """
         }.joined()
         return "<w:tr><w:trPr><w:cantSplit/>\(isHeader ? "<w:tblHeader w:val=\"true\"/>" : "")</w:trPr>\(cells)</w:tr>"
+    }
+
+    private static func syllableParagraph(_ word: PrintWord, keepNext: Bool) -> String {
+        let segments: [PrintFragment] = word.syllables.isEmpty
+            ? [.init(text: word.original, isVowelNucleus: false)]
+            : word.syllables.enumerated().flatMap { index, syllable in
+                (index == 0 ? [] : [PrintFragment(text: "·", isVowelNucleus: false)]) + syllable.fragments
+            }
+        let runs = segments.map { segment in
+            "<w:r><w:rPr><w:b/><w:color w:val=\"\(segment.isVowelNucleus ? "0A9CA6" : "242424")\"/></w:rPr><w:t xml:space=\"preserve\">\(escape(segment.text))</w:t></w:r>"
+        }.joined()
+        return "<w:p><w:pPr><w:pStyle w:val=\"Cell\"/>\(keepNext ? "<w:keepNext/>" : "")</w:pPr>\(runs)</w:p>"
     }
 
     private static func paragraph(_ text: String, style: String, keepNext: Bool = false) -> String {

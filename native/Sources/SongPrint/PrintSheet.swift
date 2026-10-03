@@ -1,11 +1,54 @@
 import Foundation
 import SongCore
 
+public struct PrintFragment: Sendable, Equatable {
+    public let text: String
+    public let isVowelNucleus: Bool
+
+    public init(text: String, isVowelNucleus: Bool) {
+        self.text = text
+        self.isVowelNucleus = isVowelNucleus
+    }
+}
+
+public struct PrintSyllable: Sendable, Equatable {
+    public let text: String
+    public let fragments: [PrintFragment]
+
+    public init(text: String, language: String) {
+        self.text = text
+        // This is an orthographic cue for English syllables already stored in the document.
+        // It does not infer an IPA transcription or change the saved pronunciation.
+        guard language.hasPrefix("en") else {
+            fragments = [.init(text: text, isVowelNucleus: false)]
+            return
+        }
+        let letters = Array(text)
+        guard let start = letters.indices.first(where: { "aeiouy".contains(letters[$0].lowercased()) }) else {
+            fragments = [.init(text: text, isVowelNucleus: false)]
+            return
+        }
+        var end = start + 1
+        while end < letters.count && "aeiouy".contains(letters[end].lowercased()) { end += 1 }
+        if end < letters.count && letters[end].lowercased() == "w" { end += 1 }
+        var parts: [PrintFragment] = []
+        if start > 0 { parts.append(.init(text: String(letters[..<start]), isVowelNucleus: false)) }
+        parts.append(.init(text: String(letters[start..<end]), isVowelNucleus: true))
+        if end < letters.count { parts.append(.init(text: String(letters[end...]), isVowelNucleus: false)) }
+        fragments = parts
+    }
+}
+
 public struct PrintWord: Sendable {
     public let original: String
     public let meaning: String
+    public let syllables: [PrintSyllable]
     public let ipa: String
     public let reading: String
+
+    public var segmented: String {
+        syllables.isEmpty ? original : syllables.map(\.text).joined(separator: "·")
+    }
 }
 
 public struct PrintPhrase: Sendable {
@@ -29,12 +72,19 @@ public struct PrintSheet: Sendable {
                             words: song.words(in: phrase).map { word in
                     let syllables = song.syllables(in: word)
                     return PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
-                                     ipa: syllables.map(\.ipa.value).filter { !$0.isEmpty }
-                                        .map { "/\($0)/" }.joined(separator: " · "),
-                                     reading: syllables.map(\.reading.value).filter { !$0.isEmpty }
-                                        .joined(separator: "・"))
+                                     syllables: syllables.map {
+                                         PrintSyllable(text: $0.text.value, language: phrase.language ?? song.metadata.sourceLanguage)
+                                     },
+                                     ipa: syllables.isEmpty || syllables.contains(where: { $0.ipa.value.isEmpty })
+                                        ? "" : syllables.map(\.ipa.value).joined(separator: "·").wrappedInSlashes,
+                                     reading: syllables.isEmpty || syllables.contains(where: { $0.reading.value.isEmpty })
+                                        ? "" : syllables.map(\.reading.value).joined(separator: "・"))
                 })
             }
         }
     }
+}
+
+private extension String {
+    var wrappedInSlashes: String { isEmpty ? "" : "/\(self)/" }
 }

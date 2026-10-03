@@ -47,7 +47,8 @@ private final class PDFPainter {
     private var section = ""
     private var contentWidth: CGFloat { size.width - 2 * margin }
     private var footerTop: CGFloat { size.height - 54 }
-    private var columns: [CGFloat] { [105, 115, 142, contentWidth - 362] }
+    private let wordColumns = 4
+    private var wordWidth: CGFloat { contentWidth / CGFloat(wordColumns) }
 
     init(context: CGContext, title: String, pageSize: CGSize) {
         self.context = context; self.title = title; self.size = pageSize
@@ -60,7 +61,7 @@ private final class PDFPainter {
             drawText("歌詞はまだありません。", x: margin, y: y, width: contentWidth,
                      font: .systemFont(ofSize: 13), color: muted)
         } else {
-            for phrase in sheet.phrases { drawPhrase(phrase) }
+            for (index, phrase) in sheet.phrases.enumerated() { drawPhrase(phrase, index: index) }
         }
         endPage()
     }
@@ -77,13 +78,15 @@ private final class PDFPainter {
                  font: .systemFont(ofSize: 9, weight: .semibold), color: teal, tracking: 1.6)
         drawText(title, x: margin, y: 52, width: contentWidth,
                  font: .systemFont(ofSize: 22, weight: .semibold), color: dark)
-        fill(CGRect(x: margin, y: 104, width: contentWidth, height: 1), line)
-        y = 122
+        drawText("原文  /  音節  /  IPA  /  カタカナ  /  語の意味  /  文の意味", x: margin, y: 85,
+                 width: contentWidth, font: .systemFont(ofSize: 9), color: muted)
+        fill(CGRect(x: margin, y: 108, width: contentWidth, height: 1), line)
+        y = 125
     }
 
     private func endPage() {
         fill(CGRect(x: margin, y: footerTop, width: contentWidth, height: 1), line)
-        drawText("意味と発音を読み、音節と音符をつなぐ練習帳", x: margin, y: footerTop + 11,
+        drawText("青緑は綴り上の母音核の目安  ·  は音節の区切り", x: margin, y: footerTop + 11,
                  width: contentWidth - 55, font: .systemFont(ofSize: 8.5), color: muted)
         drawText("\(page)", x: size.width - margin - 30, y: footerTop + 11, width: 30,
                  font: .monospacedDigitSystemFont(ofSize: 9, weight: .regular), color: muted,
@@ -100,77 +103,110 @@ private final class PDFPainter {
         return true
     }
 
-    private func drawPhrase(_ phrase: PrintPhrase) {
-        let originalHeight = textHeight(phrase.original, width: contentWidth - 24,
-                                        font: .systemFont(ofSize: 16, weight: .semibold))
-        let translationHeight = textHeight(phrase.translation, width: contentWidth - 24,
-                                           font: .systemFont(ofSize: 11))
-        let rowsHeight = phrase.words.reduce(CGFloat(0)) { total, word in
-            let values = [word.original, word.meaning, word.ipa, word.reading]
-            return total + max(30, values.enumerated().map { column, value in
-                textHeight(value.isEmpty ? "-" : value, width: columns[column] - 12,
-                           font: .systemFont(ofSize: column == 0 ? 10.5 : 9.5)) + 12
-            }.max() ?? 30)
+    private func drawPhrase(_ phrase: PrintPhrase, index: Int) {
+        let headingHeight = textHeight(phrase.original, width: contentWidth - 12,
+                                       font: .systemFont(ofSize: 14, weight: .semibold)) + 27
+        let groups = stride(from: 0, to: phrase.words.count, by: wordColumns).map {
+            Array(phrase.words[$0..<min($0 + wordColumns, phrase.words.count)])
         }
-        let phraseHeight = originalHeight + translationHeight + 48
-            + (phrase.section == section ? 0 : 24) + (phrase.words.isEmpty ? 0 : 23 + rowsHeight)
-        // Keep a short phrase with its table; long phrases still flow row by row across pages.
-        if phraseHeight < footerTop - 134 && y + phraseHeight > footerTop - 12 {
-            endPage(); startPage()
-        }
-        ensure(max(100, originalHeight + translationHeight + 60))
+        let rowHeights = groups.map { group in max(72, group.map(wordHeight).max() ?? 72) }
+        let translationHeight = phrase.translation.isEmpty ? 0 :
+            textHeight(phrase.translation, width: contentWidth - 100, font: .systemFont(ofSize: 10.5)) + 16
+        let wholeHeight = headingHeight + rowHeights.reduce(0, +) + CGFloat(translationHeight) + 26
+            + (phrase.section == section ? 0 : 24)
+        if wholeHeight < footerTop - 135 && y + wholeHeight > footerTop - 12 { endPage(); startPage() }
+        ensure(headingHeight + (rowHeights.first ?? 0) + 20)
         if section != phrase.section {
             section = phrase.section
             drawText(section, x: margin, y: y, width: contentWidth,
                      font: .systemFont(ofSize: 10, weight: .bold), color: teal)
             y += 24
         }
-        fill(CGRect(x: margin, y: y, width: 3, height: max(28, originalHeight + translationHeight + 12)), teal)
-        y += 3
-        y += drawText(phrase.original, x: margin + 12, y: y, width: contentWidth - 24,
-                      font: .systemFont(ofSize: 16, weight: .semibold), color: dark) + 3
-        if !phrase.translation.isEmpty {
-            y += drawText(phrase.translation, x: margin + 12, y: y, width: contentWidth - 24,
-                          font: .systemFont(ofSize: 11), color: muted) + 6
-        } else { y += 7 }
-        if !phrase.words.isEmpty {
-            drawTableHeader()
-            for (index, word) in phrase.words.enumerated() {
-                let values = [word.original, word.meaning, word.ipa, word.reading]
-                let rowHeight = max(30, values.enumerated().map { column, value in
-                    textHeight(value.isEmpty ? "-" : value, width: columns[column] - 12,
-                               font: .systemFont(ofSize: column == 0 ? 10.5 : 9.5)) + 12
-                }.max() ?? 30)
-                if ensure(rowHeight + 4) { drawTableHeader() }
-                if index.isMultiple(of: 2) {
-                    fill(CGRect(x: margin, y: y, width: contentWidth, height: rowHeight), pale)
-                }
-                var x = margin
-                for column in 0..<values.count {
-                    drawText(values[column].isEmpty ? "-" : values[column], x: x + 6, y: y + 6,
-                             width: columns[column] - 12,
-                             font: .systemFont(ofSize: column == 0 ? 10.5 : 9.5,
-                                               weight: column == 0 ? .medium : .regular),
-                             color: column == 0 ? dark : muted)
-                    x += columns[column]
-                }
-                fill(CGRect(x: margin, y: y + rowHeight - 0.5, width: contentWidth, height: 0.5), line)
-                y += rowHeight
+        drawText(String(format: "%02d", index + 1), x: margin, y: y + 1, width: 28,
+                 font: .monospacedDigitSystemFont(ofSize: 10, weight: .semibold), color: teal)
+        y += drawText(phrase.original, x: margin + 30, y: y, width: contentWidth - 30,
+                      font: .systemFont(ofSize: 14, weight: .semibold), color: dark) + 12
+        for (rowIndex, group) in groups.enumerated() {
+            let height = rowHeights[rowIndex]
+            if ensure(height + 4) {
+                drawText("\(phrase.section)  /  \(String(format: "%02d", index + 1))（続き）",
+                         x: margin, y: y, width: contentWidth,
+                         font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
+                y += 18
             }
+            if rowIndex.isMultiple(of: 2) {
+                fill(CGRect(x: margin, y: y, width: contentWidth, height: height), pale)
+            }
+            for (column, word) in group.enumerated() {
+                drawWord(word, x: margin + CGFloat(column) * wordWidth, y: y)
+                if column > 0 {
+                    fill(CGRect(x: margin + CGFloat(column) * wordWidth, y: y + 8,
+                                width: 0.5, height: height - 16), line)
+                }
+            }
+            fill(CGRect(x: margin, y: y + height - 0.5, width: contentWidth, height: 0.5), line)
+            y += height
         }
-        y += 22
+        if !phrase.translation.isEmpty {
+            ensure(CGFloat(translationHeight) + 7)
+            drawText("文の意味", x: margin + 7, y: y + 10, width: 65,
+                     font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
+            drawText(phrase.translation, x: margin + 73, y: y + 8, width: contentWidth - 80,
+                     font: .systemFont(ofSize: 10.5), color: dark)
+            y += CGFloat(translationHeight)
+        }
+        y += 24
     }
 
-    private func drawTableHeader() {
-        ensure(28)
-        fill(CGRect(x: margin, y: y, width: contentWidth, height: 23), teal)
-        var x = margin
-        for (index, label) in ["語", "意味", "IPA", "カタカナ読み"].enumerated() {
-            drawText(label, x: x + 6, y: y + 4, width: columns[index] - 12,
-                     font: .systemFont(ofSize: 9, weight: .semibold), color: .white)
-            x += columns[index]
+    private func wordHeight(_ word: PrintWord) -> CGFloat {
+        let width = wordWidth - 14
+        return 14 + textHeight(word.meaning.isEmpty ? "意味未設定" : word.meaning, width: width,
+                               font: .systemFont(ofSize: 9))
+            + richHeight(segmented(word), width: width)
+            + textHeight(word.ipa.isEmpty ? "IPA未設定" : word.ipa, width: width,
+                         font: .systemFont(ofSize: 9))
+            + textHeight(word.reading.isEmpty ? "読み未設定" : word.reading, width: width,
+                         font: .systemFont(ofSize: 9.5)) + 7
+    }
+
+    private func drawWord(_ word: PrintWord, x: CGFloat, y: CGFloat) {
+        let width = wordWidth - 14
+        var top = y + 8
+        top += drawText(word.meaning.isEmpty ? "意味未設定" : word.meaning,
+                        x: x + 7, y: top, width: width, font: .systemFont(ofSize: 9), color: muted) + 2
+        let segmented = segmented(word)
+        let height = richHeight(segmented, width: width)
+        segmented.draw(with: CGRect(x: x + 7, y: top, width: width, height: height),
+                       options: [.usesLineFragmentOrigin, .usesFontLeading])
+        top += height + 2
+        top += drawText(word.ipa.isEmpty ? "IPA未設定" : word.ipa,
+                        x: x + 7, y: top, width: width, font: .systemFont(ofSize: 9), color: dark) + 2
+        drawText(word.reading.isEmpty ? "読み未設定" : word.reading,
+                 x: x + 7, y: top, width: width, font: .systemFont(ofSize: 9.5), color: muted)
+    }
+
+    private func segmented(_ word: PrintWord) -> NSAttributedString {
+        let result = NSMutableAttributedString(string: "")
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let basic: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: dark]
+        if word.syllables.isEmpty {
+            result.append(NSAttributedString(string: word.original, attributes: basic))
+        } else {
+            for (index, syllable) in word.syllables.enumerated() {
+                if index > 0 { result.append(NSAttributedString(string: "·", attributes: [.font: font, .foregroundColor: muted])) }
+                for fragment in syllable.fragments {
+                    result.append(NSAttributedString(string: fragment.text, attributes: [
+                        .font: font, .foregroundColor: fragment.isVowelNucleus ? teal : dark
+                    ]))
+                }
+            }
         }
-        y += 23
+        return result
+    }
+
+    private func richHeight(_ value: NSAttributedString, width: CGFloat) -> CGFloat {
+        max(18, ceil(value.boundingRect(with: NSSize(width: width, height: 10_000),
+                                       options: [.usesLineFragmentOrigin, .usesFontLeading]).height) + 2)
     }
 
     private func fill(_ rect: CGRect, _ color: NSColor) {

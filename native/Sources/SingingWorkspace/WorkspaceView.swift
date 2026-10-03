@@ -127,7 +127,7 @@ struct WorkspaceView: View {
                 Menu {
                     Button("Word (.docx)") { exportSheet(.word) }
                     Button("PDF (.pdf)") { exportSheet(.pdf) }
-                } label: { Label("印刷用に書き出す", systemImage: "square.and.arrow.up") }
+                } label: { Label("歌詞シートを書き出す", systemImage: "square.and.arrow.up") }
                 Menu {
                     Button("歌詞を追加…", systemImage: "text.badge.plus") { addingLyrics = true }
                     Button("意味を解析…", systemImage: "sparkles") { showAnalysis = true }.disabled(phrase == nil)
@@ -508,7 +508,7 @@ struct WorkspaceView: View {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title).\(format.fileExtension)"
-        panel.message = "A4の教材として、原文・訳・語の意味・IPA・カタカナ読みを書き出します。"
+        panel.message = "A4の教材として、原文・音節と母音核・IPA・カタカナ読み・語の意味・文の訳を書き出します。"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
