@@ -45,12 +45,16 @@ public enum WordSheet {
                 lastSection = phrase.section
             }
             body += paragraph(phrase.original, style: "Phrase")
-            for row in flowRows(phrase.words) {
+            if !phrase.translation.isEmpty { body += paragraph("文の意味　" + phrase.translation, style: "Translation", keepNext: true) }
+            let rows = flowRows(phrase.words)
+            for (index, row) in rows.enumerated() {
+                if index > 0 {
+                    body += paragraph("続き｜" + phrase.original, style: "Continuation", keepNext: true)
+                }
                 body += interlinearRow(row.words, widths: row.widths)
                 // Word merges consecutive tables with different grids unless a paragraph separates them.
                 body += paragraph("", style: "RowGap")
             }
-            if !phrase.translation.isEmpty { body += paragraph("文の意味　" + phrase.translation, style: "Translation") }
             body += paragraph("", style: "Gap")
         }
         return """
@@ -67,7 +71,7 @@ public enum WordSheet {
         var widths: [Int] = []
         var used = 0
         for word in words {
-            let width = min(2250, max(900, word.segmented.count * 155,
+            let width = min(2500, max(1100, word.segmented.count * 205,
                                       word.meaning.count * 155,
                                       word.ipa.count * 105,
                                       word.reading.count * 145) + 150)
@@ -185,6 +189,7 @@ public enum WordSheet {
       <w:style w:type="paragraph" w:styleId="Gloss"><w:name w:val="Gloss"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="15"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="686868"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Lyric"><w:name w:val="Lyric"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="10"/></w:pPr><w:rPr><w:b/><w:sz w:val="23"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Annotation"><w:name w:val="Annotation"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="0"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="686868"/></w:rPr></w:style>
+      <w:style w:type="paragraph" w:styleId="Continuation"><w:name w:val="Continuation"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="55" w:after="15"/></w:pPr><w:rPr><w:sz w:val="16"/><w:color w:val="0A9CA6"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="RowGap"><w:name w:val="RowGap"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="0"/><w:keepNext/></w:pPr><w:rPr><w:sz w:val="4"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Gap"><w:name w:val="Gap"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="50"/></w:pPr><w:rPr><w:sz w:val="6"/></w:rPr></w:style>
       <w:style w:type="paragraph" w:styleId="Header"><w:name w:val="Header"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="16"/><w:color w:val="0A9CA6"/><w:spacing w:val="20"/></w:rPr></w:style>
