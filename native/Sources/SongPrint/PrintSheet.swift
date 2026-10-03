@@ -46,8 +46,32 @@ public struct PrintWord: Sendable {
     public let ipa: String
     public let reading: String
 
+    public init(original: String, meaning: String, syllables: [PrintSyllable], ipa: String, reading: String) {
+        self.original = original; self.meaning = meaning; self.syllables = syllables
+        self.ipa = ipa; self.reading = reading
+    }
+
+    /// Keeps punctuation attached to its word when the stored syllables omit it.
+    public var displayFragments: [PrintFragment] {
+        guard !syllables.isEmpty else { return [.init(text: original, isVowelNucleus: false)] }
+        var parts = syllables.enumerated().flatMap { index, syllable in
+            (index == 0 ? [] : [PrintFragment(text: "·", isVowelNucleus: false)]) + syllable.fragments
+        }
+        let joined = syllables.map(\.text).joined()
+        if let range = original.range(of: joined, options: [.caseInsensitive, .anchored]) {
+            let suffix = String(original[range.upperBound...])
+            if !suffix.isEmpty { parts.append(.init(text: suffix, isVowelNucleus: false)) }
+        } else if let range = original.range(of: joined, options: .caseInsensitive) {
+            let prefix = String(original[..<range.lowerBound])
+            let suffix = String(original[range.upperBound...])
+            if !prefix.isEmpty { parts.insert(.init(text: prefix, isVowelNucleus: false), at: 0) }
+            if !suffix.isEmpty { parts.append(.init(text: suffix, isVowelNucleus: false)) }
+        }
+        return parts
+    }
+
     public var segmented: String {
-        syllables.isEmpty ? original : syllables.map(\.text).joined(separator: "·")
+        displayFragments.map(\.text).joined()
     }
 }
 

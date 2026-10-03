@@ -1,5 +1,6 @@
 import SwiftUI
 import SongCore
+import SongPrint
 
 struct ReadingView: View {
     let song: SongDocument
@@ -7,57 +8,101 @@ struct ReadingView: View {
     @ObservedObject var session: WorkspaceSession
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 215 * session.textScale), spacing: 16)], alignment: .leading, spacing: 16) {
+            LyricsFlowLayout(horizontalSpacing: 11 * session.textScale, verticalSpacing: 18 * session.textScale) {
                 ForEach(song.words(in: phrase)) { word in
                     Button {
                         session.wordID = word.id; session.syllableID = nil; session.showInspector = true
-                    } label: { WordCell(word: word, syllables: song.syllables(in: word), selected: session.wordID == word.id, scale: session.textScale) }
+                    } label: {
+                        InterlinearWord(word: word, syllables: song.syllables(in: word),
+                                        language: phrase.language ?? song.metadata.sourceLanguage,
+                                        selected: session.wordID == word.id, scale: session.textScale)
+                    }
                         .buttonStyle(.plain).accessibilityLabel("\(word.surface)、\(word.contextualMeaning.value)、詳細を編集")
                 }
-            }.padding(.horizontal, 30).padding(.bottom, 30)
-            VStack(alignment: .leading, spacing: 8) {
-                Label("読む → たしかめる → 歌う", systemImage: "leaf").font(.callout.weight(.medium)).foregroundStyle(.teal)
-                Text("まず意味と音節を確かめましょう。IPAや読みは単語の詳細で追加できます。\n「歌う」に切り替えると、音節をのせる場所が見えます。")
-                    .font(.callout).foregroundStyle(.secondary).lineSpacing(5)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
-                .background(Color.teal.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal, 30).padding(.bottom, 30)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 30).padding(.bottom, 30)
         }
     }
 }
 
-struct WordCell: View {
+private struct InterlinearWord: View {
     let word: Word
     let syllables: [Syllable]
+    let language: String
     let selected: Bool
     let scale: Double
+    private var printWord: PrintWord {
+        PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
+                  syllables: syllables.map { PrintSyllable(text: $0.text.value, language: language) },
+                  ipa: syllables.isEmpty || syllables.contains(where: { $0.ipa.value.isEmpty }) ? "" :
+                    "/" + syllables.map(\.ipa.value).joined(separator: "·") + "/",
+                  reading: syllables.isEmpty || syllables.contains(where: { $0.reading.value.isEmpty }) ? "" :
+                    syllables.map(\.reading.value).joined(separator: "・"))
+    }
+    private var columnWidth: CGFloat {
+        let item = printWord
+        let lyricWidth = CGFloat(item.segmented.count) * 13.5 * scale
+        let annotationWidth = CGFloat(max(item.meaning.count, item.ipa.count, item.reading.count)) * 8.5 * scale
+        return max(54 * scale, min(180 * scale, max(lyricWidth, annotationWidth) + 5))
+    }
+    private var coloredLyric: Text {
+        printWord.displayFragments.reduce(Text("")) { result, fragment in
+            result + Text(fragment.text).foregroundColor(fragment.isVowelNucleus ? .teal : .primary)
+        }
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(word.contextualMeaning.value.isEmpty ? "意味を追加" : word.contextualMeaning.value)
-                    .font(.system(size: 14 * scale, weight: .medium)).foregroundStyle(.teal)
-                Spacer(minLength: 4)
-                if word.contextualMeaning.userEdited { Image(systemName: "pencil").font(.caption2).foregroundStyle(.secondary) }
+        let item = printWord
+        VStack(alignment: .leading, spacing: 2 * scale) {
+            Text(item.meaning.isEmpty ? "意味未設定" : item.meaning)
+                .font(.system(size: 11 * scale)).foregroundStyle(.secondary).lineLimit(2)
+                .frame(height: 29 * scale, alignment: .bottomLeading)
+            coloredLyric.font(.system(size: 22 * scale, weight: .semibold, design: .serif))
+                .lineLimit(1).minimumScaleFactor(0.75)
+            Text(item.ipa.isEmpty ? "IPA未設定" : item.ipa)
+                .font(.system(size: 11 * scale)).foregroundStyle(.secondary).lineLimit(1)
+            Text(item.reading.isEmpty ? "読み未設定" : item.reading)
+                .font(.system(size: 11 * scale)).foregroundStyle(.secondary).lineLimit(1)
+            Rectangle().fill(selected ? Color.teal : .clear).frame(height: 2 * scale)
+        }
+        .frame(width: columnWidth, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct LyricsFlowLayout: Layout {
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 700
+        let rows = arrange(subviews, maxWidth: width)
+        return CGSize(width: width, height: rows.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let frames = arrange(subviews, maxWidth: bounds.width)
+        for (view, frame) in zip(subviews, frames) {
+            view.place(at: CGPoint(x: bounds.minX + frame.origin.x, y: bounds.minY + frame.origin.y),
+                       proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(_ subviews: Subviews, maxWidth: CGFloat) -> [CGRect] {
+        var result: [CGRect] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth {
+                x = 0; y += rowHeight + verticalSpacing; rowHeight = 0
             }
-            Text(word.surface).font(.system(size: 27 * scale, weight: .semibold, design: .serif)).foregroundStyle(.primary)
-            Text(syllables.allSatisfy { $0.ipa.value.isEmpty } ? "IPAは未設定" :
-                 "/" + syllables.map { $0.ipa.value.isEmpty ? "?" : $0.ipa.value }.joined(separator: ".") + "/")
-                .font(.system(size: 17 * scale)).foregroundStyle(.secondary)
-            if !syllables.allSatisfy({ $0.reading.value.isEmpty }) {
-                Text(syllables.map(\.reading.value).joined()).font(.system(size: 14 * scale)).foregroundStyle(.secondary)
-            }
-            Divider().padding(.top, 5)
-            HStack(spacing: 7) {
-                ForEach(syllables) { syllable in
-                    Text(syllable.text.value).font(.system(size: 13 * scale, weight: .medium))
-                        .padding(.horizontal, 10).padding(.vertical, 6).background(Color.teal.opacity(0.08), in: Capsule())
-                }
-                if syllables.isEmpty { Text("音節をまだ分割していません").font(.caption).foregroundStyle(.secondary) }
-                Spacer(minLength: 0)
-            }
-        }.padding(22).frame(maxWidth: .infinity, minHeight: 245 * scale, alignment: .topLeading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(selected ? Color.teal : Color.primary.opacity(0.09), lineWidth: selected ? 2 : 1))
+            result.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + horizontalSpacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return result
     }
 }
 
