@@ -5,15 +5,16 @@ import SongPrint
 struct ReadingView: View {
     let song: SongDocument
     @ObservedObject var session: WorkspaceSession
+    @ObservedObject var preferences: DisplayPreferences
     let mutate: SongMutation
-    @State private var showingOrderSettings = false
+    @Environment(\.openSettings) private var openSettings
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 13 * session.textScale) {
                     HStack(spacing: 12) {
                         Text("歌詞を読む").font(.system(size: 16 * session.textScale, weight: .semibold))
-                        Text(session.readingOrder.legend)
+                        Text(preferences.readingOrder.legend)
                             .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
                     }.padding(.bottom, 2)
                     ViewThatFits(in: .horizontal) {
@@ -52,39 +53,7 @@ struct ReadingView: View {
 
     @ViewBuilder
     private var displayOptions: some View {
-        Button("表示順を並び替える…", systemImage: "arrow.up.arrow.down") {
-            showingOrderSettings = true
-        }
-        .popover(isPresented: $showingOrderSettings) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("上から並ぶ順番").font(.headline)
-                Text("矢印で本文・カタカナ・IPA・単語訳・翻訳を自由に動かせます。PDF・Wordも同じ順で書き出します。")
-                    .font(.caption).foregroundStyle(.secondary)
-                ForEach(session.readingOrder.elements, id: \.self) { element in
-                    HStack {
-                        Text(element.label)
-                        Spacer()
-                        let index = session.readingOrder.elements.firstIndex(of: element)!
-                        Button {
-                            session.readingOrder = session.readingOrder.moving(element, by: -1)
-                        } label: { Image(systemName: "arrow.up") }
-                            .help("\(element.label)を上へ")
-                            .disabled(index == 0)
-                        Button {
-                            session.readingOrder = session.readingOrder.moving(element, by: 1)
-                        } label: { Image(systemName: "arrow.down") }
-                            .help("\(element.label)を下へ")
-                            .disabled(index == session.readingOrder.elements.count - 1)
-                    }
-                }
-                Divider()
-                HStack {
-                    Button("今回の並びを試す") { session.readingOrder = .requested }
-                    Spacer()
-                    Button("元の並びに戻す") { session.readingOrder = .baseline }
-                }
-            }.padding(18).frame(width: 410)
-        }
+        Button("表示順の詳細設定…", systemImage: "line.3.horizontal") { openSettings() }
         if NinthPronunciation.isAvailable(in: song) {
             Picker("第九の発音", selection: Binding(
                 get: { song.metadata.ninthPronunciation ?? .standard },
@@ -97,12 +66,12 @@ struct ReadingView: View {
 
     private func phraseLine(_ phrase: Phrase) -> some View {
         VStack(alignment: .leading, spacing: 3 * session.textScale) {
-            if !session.readingOrder.beforeTranslation.isEmpty {
-                wordBlock(phrase, elements: session.readingOrder.beforeTranslation)
+            if !preferences.readingOrder.beforeTranslation.isEmpty {
+                wordBlock(phrase, elements: preferences.readingOrder.beforeTranslation)
             }
             translation(for: phrase)
-            if !session.readingOrder.afterTranslation.isEmpty {
-                wordBlock(phrase, elements: session.readingOrder.afterTranslation)
+            if !preferences.readingOrder.afterTranslation.isEmpty {
+                wordBlock(phrase, elements: preferences.readingOrder.afterTranslation)
             }
         }
         .padding(.vertical, 5 * session.textScale)

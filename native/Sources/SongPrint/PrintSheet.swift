@@ -108,9 +108,10 @@ public struct ReadingOrder: Equatable, Sendable {
         self.elements = elements
     }
 
-    public static let baseline = Self([.meaning, .original, .ipa, .reading, .translation])!
+    public static let baseline = Self([.original, .reading, .ipa, .meaning, .translation])!
+    public static let previous = Self([.meaning, .original, .ipa, .reading, .translation])!
     public static let meaningBelow = Self([.original, .meaning, .ipa, .reading, .translation])!
-    public static let requested = Self([.original, .reading, .ipa, .meaning, .translation])!
+    public static let requested = baseline
 
     public var legend: String { elements.map(\.label).joined(separator: " → ") }
 
@@ -128,6 +129,15 @@ public struct ReadingOrder: Equatable, Sendable {
         }
         var result = elements
         result.swapAt(index, index + offset)
+        return Self(result)!
+    }
+
+    public func moving(_ element: ReadingElement, to destination: Int) -> Self {
+        guard let source = elements.firstIndex(of: element),
+              elements.indices.contains(destination), source != destination else { return self }
+        var result = elements
+        result.remove(at: source)
+        result.insert(element, at: destination)
         return Self(result)!
     }
 }

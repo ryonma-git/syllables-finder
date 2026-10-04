@@ -41,17 +41,7 @@ final class WorkspaceSession: ObservableObject {
     @Published var bpm = 88.0
     @Published var error: String?
     @Published var textScale = 1.0
-    @Published var readingOrder: ReadingOrder {
-        didSet {
-            UserDefaults.standard.set(readingOrder.elements.map(\.rawValue), forKey: "SingingWorkspace.readingOrder")
-        }
-    }
     let guide = GuideTonePlayer()
-
-    init() {
-        let saved = UserDefaults.standard.stringArray(forKey: "SingingWorkspace.readingOrder") ?? []
-        readingOrder = ReadingOrder(saved.compactMap(ReadingElement.init(rawValue:))) ?? .baseline
-    }
 
     func activeRange(for song: SongDocument) -> BeatRange? {
         if playbackScope != .whole { return practiceRange }
@@ -79,6 +69,7 @@ final class WorkspaceSession: ObservableObject {
 struct WorkspaceView: View {
     @Binding var file: SongFile
     @StateObject private var session = WorkspaceSession()
+    @EnvironmentObject private var displayPreferences: DisplayPreferences
     @Environment(\.undoManager) private var undoManager
     @State private var addingLyrics = false
     @State private var showingSamples = false
@@ -102,7 +93,7 @@ struct WorkspaceView: View {
                     HStack(alignment: .top, spacing: 0) {
                         VStack(alignment: .leading, spacing: 0) {
                             if session.mode == .reading {
-                                ReadingView(song: song, session: session, mutate: mutate)
+                                ReadingView(song: song, session: session, preferences: displayPreferences, mutate: mutate)
                             } else {
                                 phraseHeader(phrase)
                                 SingingView(song: song, phrase: phrase, session: session,
@@ -511,7 +502,7 @@ struct WorkspaceView: View {
 
     private func exportSheet(_ format: SheetFormat) {
         let snapshot = song
-        let readingOrder = session.readingOrder
+        let readingOrder = displayPreferences.readingOrder
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.type]
         panel.canCreateDirectories = true

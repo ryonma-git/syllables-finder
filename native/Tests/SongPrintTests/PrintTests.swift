@@ -11,7 +11,7 @@ struct PrintTests {
         NinthPronunciation.apply(.stage, to: &song)
         song.words[0].contextualMeaning.edit("語釈確認")
         var translations: [CGFloat] = []
-        for order in [ReadingOrder.baseline, .meaningBelow] {
+        for order in [ReadingOrder.previous, .meaningBelow] {
             let sheet = PrintSheet(song: song, order: order)
             let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
             let page = try #require(pdf.page(at: 0))
@@ -20,11 +20,12 @@ struct PrintTests {
             #expect(pdf.string?.contains("ブリュー・デル") == true)
             let lyric = try #require(pdf.findString("Freu·de", withOptions: []).first).bounds(for: page)
             let gloss = try #require(pdf.findString("語釈確認", withOptions: []).first).bounds(for: page)
-            #expect(order == .baseline ? gloss.minY > lyric.minY : gloss.minY < lyric.minY)
+            #expect(order == .previous ? gloss.minY > lyric.minY : gloss.minY < lyric.minY)
             translations.append(try #require(pdf.findString("文の意味", withOptions: []).first).bounds(for: page).minY)
         }
         #expect(translations[0] == translations[1])
         #expect(PrintSheet(song: song).order == .baseline)
+        #expect(ReadingOrder.baseline.elements == [.original, .reading, .ipa, .meaning, .translation])
     }
 
     @Test func readingFirstKeepsTranslationBelowAnnotatedWords() throws {
@@ -49,6 +50,7 @@ struct PrintTests {
         #expect(order.beforeTranslation == [.reading])
         #expect(order.afterTranslation == [.original, .meaning, .ipa])
         #expect(order.moving(.translation, by: -1).elements == [.translation, .reading, .original, .meaning, .ipa])
+        #expect(order.moving(.reading, to: 3).elements == [.translation, .original, .meaning, .reading, .ipa])
         #expect(ReadingOrder([.original, .original, .ipa, .meaning, .translation]) == nil)
         let song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
         let pdf = try #require(PDFDocument(data: PDFSheet.render(PrintSheet(song: song, order: order))))

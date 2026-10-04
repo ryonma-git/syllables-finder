@@ -22,7 +22,8 @@ SongMetadata.ninthPronunciation は optional（nil/standard は標準、stage �
 旧文書ではキー欠落を許容。第九サンプルの既知ID・綴り・未編集のIPA/読みの組だけを
 プリセット間で置換し、標準への復帰は原データと一致する。変更は通常の文書編集として保存・Undo対象。
 五要素の表示順は曲データには保存しない。ReadingOrder は各要素が一度ずつ現れる順列で、
-WorkspaceSession から利用者のアプリ設定へ保存する。PrintSheet に同じ順列を渡し、PDF/Wordへ適用する。
+DisplayPreferences から利用者のアプリ設定へ保存する。PrintSheet に同じ順列を渡し、PDF/Wordへ適用する。
+初期順は本文・音節→カタカナ→IPA→単語訳→翻訳。既存のカスタム順は保持する。
 
 ## 音楽
 
