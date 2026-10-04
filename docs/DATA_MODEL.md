@@ -18,6 +18,11 @@ GeneratedField<Value>: value, source(kind/provider/modelの出所), userEdited�
 分割配列には別の structureUserEdited フラグを設け、構造候補の適用は後続フェーズとする。
 IPA・読み・意味の未生成は空値として表示上「未設定」。AI が返した値は正解保証しない。
 
+SongMetadata.ninthPronunciation は optional（nil/standard は標準、stage は劇ドイツ語）。
+旧文書ではキー欠落を許容。第九サンプルの既知ID・綴り・未編集のIPA/読みの組だけを
+プリセット間で置換し、標準への復帰は原データと一致する。変更は通常の文書編集として保存・Undo対象。
+意味の上下配置は文書には保存せず、WorkspaceSession と PrintSheet の MeaningPlacement に保持する。
+
 ## 音楽
 
 Music: measures, events, tempos, meters, sections/phrases(MusicSpan)。

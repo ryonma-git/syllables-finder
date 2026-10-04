@@ -36,7 +36,8 @@ public enum WordSheet {
 
     private static func document(_ sheet: PrintSheet) -> String {
         var body = paragraph(sheet.title, style: "Title")
-        body += paragraph("語の意味 → 原文・音節 → IPA → カタカナ。青緑は母音核、· は音節の区切りです。", style: "Translation")
+        body += paragraph(sheet.meaningPlacement.legend + (sheet.pronunciationLabel.map { "　｜" + $0 } ?? "")
+                          + "。青緑は母音核、· は音節の区切りです。", style: "Translation")
         if sheet.phrases.isEmpty { body += paragraph("歌詞はまだありません。", style: "Translation") }
         var lastSection = ""
         for phrase in sheet.phrases {
@@ -51,7 +52,7 @@ public enum WordSheet {
                 if index > 0 {
                     body += paragraph("続き｜" + phrase.original, style: "Continuation", keepNext: true)
                 }
-                body += interlinearRow(row.words, widths: row.widths)
+                body += interlinearRow(row.words, widths: row.widths, placement: sheet.meaningPlacement)
                 // Word merges consecutive tables with different grids unless a paragraph separates them.
                 body += paragraph("", style: "RowGap")
             }
@@ -83,14 +84,15 @@ public enum WordSheet {
         return rows
     }
 
-    private static func interlinearRow(_ words: [PrintWord], widths: [Int]) -> String {
+    private static func interlinearRow(_ words: [PrintWord], widths: [Int], placement: MeaningPlacement) -> String {
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         let cells = zip(words, widths).map { word, width in
-            """
+            let lyric = syllableParagraph(word)
+            let meaning = paragraph(word.meaning.isEmpty ? "意味未設定" : word.meaning, style: "Gloss")
+            return """
             <w:tc><w:tcPr><w:tcW w:w="\(width)" w:type="dxa"/>
             <w:tcMar><w:top w:w="25" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="25" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tcMar></w:tcPr>
-            \(paragraph(word.meaning.isEmpty ? "意味未設定" : word.meaning, style: "Gloss"))
-            \(syllableParagraph(word))
+            \(placement == .above ? meaning + lyric : lyric + meaning)
             \(paragraph(word.ipa.isEmpty ? "IPA未設定" : word.ipa, style: "Annotation"))
             \(paragraph(word.reading.isEmpty ? "カタカナ未設定" : word.reading, style: "Annotation"))
             </w:tc>

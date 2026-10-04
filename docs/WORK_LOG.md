@@ -1,5 +1,17 @@
 # 作業記録 — 2026-09-27
 
+## 2026-10-04 意味の上下配置の試用・第九の劇ドイツ語
+
+- `codex/lyrics-layout-trial` を `codex/mary-lyrics-sheet` の `4c7ad58` から作成。試用前のbranchを保持。mainへの採用ではない。
+- 読む画面に意味の上/下切替を追加。初期値は元の上配置。PDF/Wordも選択に従い、PDFの行間は据置。
+- 第九に標準/劇ドイツ語の選択を追加。IPAとカタカナを同時切替し、標準で完全復帰。手修正値を保持。保存形式はoptional項目追加で旧文書を読み込める。
+- Swift 82件（Core 71、Print 5、Services 4、Notation 2）、既存Pythonの母音例と23件成功。ビルド成功。
+- 別bundle IDの試用アプリで上下・標準/劇の往復、日本語の曲名入力、Word保存ダイアログを実操作。WordのXMLはCLI出力と一致。
+- 発音選択の保存・復帰はencode/decodeの自動試験で確認。別bundle IDの試用アプリでは新規.songproj保存ボタンが無効で、保存後の再起動を伴う実画面試験は未完了。既存の曲ファイルへの書込みは行っていない。
+- PDFをPopplerで描画し、上/下とも1ページ・日本語見出し・カタカナ・IPAを目視確認。Wordは同梱rendererで日本語が欠ける既知の環境差があり、Pagesで2ページすべてを目視確認した。Microsoft Word自体での表示は未検証。
+- 生成資料は書類フォルダの `SingingWorkspaceExamples/Meaning-Below-2026-10-04` に置き、Git対象外。Inagawa作業フォルダは `codex/lyrics-alignment-review-fixes` でcleanを確認。
+- 元へ戻す操作は「単語の意味：上（元の配置）」「第九の発音：標準ドイツ語」。実装ごと試用前に戻す場合はcleanを確認して保持branchへ通常のswitch後、ランチャーで再buildする。stash/reset/rebaseは使わない。
+
 ## 2026-09-28 追加作業: Claudeによる歌詞×旋律の割付・多言語・声部・楽譜（branch `claude/lyrics-melody-alignment`）
 
 - ChatGPT（GPT-6 Astra高）との設計相談が利用上限で中断したため、利用者の依頼でClaude Opus 5.5が意思を引き継いだ。ChatGPT側と分けるため `codex/native-singing-foundation`（`1a0af6b`）から別branchを作成。`main`・Codexの作業フォルダ（`~/.codex/worktrees/53dd`、clean）には触れていない。

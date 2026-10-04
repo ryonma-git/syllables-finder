@@ -12,9 +12,17 @@ struct ReadingView: View {
                 LazyVStack(alignment: .leading, spacing: 13 * session.textScale) {
                     HStack(spacing: 12) {
                         Text("歌詞を読む").font(.system(size: 16 * session.textScale, weight: .semibold))
-                        Text("語の意味 → 原文・音節 → IPA → カタカナ")
+                        Text(session.meaningPlacement.legend)
                             .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
                     }.padding(.bottom, 2)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 18) { displayOptions }
+                        VStack(alignment: .leading, spacing: 8) { displayOptions }
+                    }
+                    if NinthPronunciation.isAvailable(in: song) {
+                        Text("劇ドイツ語：語尾の r も発音（Brüder＝ブリューデル）。手修正した発音は保持します。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     ForEach(song.sections) { section in
                         VStack(alignment: .leading, spacing: 8 * session.textScale) {
                             Text(section.title)
@@ -38,6 +46,21 @@ struct ReadingView: View {
             .onAppear {
                 if let first = song.phrases.first { proxy.scrollTo(first.id, anchor: .top) }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var displayOptions: some View {
+        Picker("単語の意味", selection: $session.meaningPlacement) {
+            ForEach(MeaningPlacement.allCases, id: \.self) { Text($0.label).tag($0) }
+        }.pickerStyle(.segmented).frame(width: 280)
+        if NinthPronunciation.isAvailable(in: song) {
+            Picker("第九の発音", selection: Binding(
+                get: { song.metadata.ninthPronunciation ?? .standard },
+                set: { style in mutate("第九の発音を切り替え") { NinthPronunciation.apply(style, to: &$0) } }
+            )) {
+                ForEach(NinthPronunciation.allCases, id: \.self) { Text($0.label).tag($0) }
+            }.pickerStyle(.segmented).frame(width: 270)
         }
     }
 
@@ -65,7 +88,8 @@ struct ReadingView: View {
                     } label: {
                         InterlinearWord(word: word, syllables: song.syllables(in: word),
                                         language: phrase.language ?? song.metadata.sourceLanguage,
-                                        selected: session.wordID == word.id, scale: session.textScale)
+                                        selected: session.wordID == word.id, scale: session.textScale,
+                                        meaningPlacement: session.meaningPlacement)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.syllables(in: word).map(\.reading.value).joined(separator: "・"))、詳細を編集")
@@ -85,6 +109,7 @@ private struct InterlinearWord: View {
     let language: String
     let selected: Bool
     let scale: Double
+    let meaningPlacement: MeaningPlacement
     private var printWord: PrintWord {
         PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
                   syllables: syllables.map { PrintSyllable(text: $0.text.value, language: language) },
@@ -107,10 +132,10 @@ private struct InterlinearWord: View {
     var body: some View {
         let item = printWord
         VStack(alignment: .leading, spacing: 1 * scale) {
-            Text(item.meaning.isEmpty ? "意味未設定" : item.meaning)
-                .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+            if meaningPlacement == .above { meaning }
             coloredLyric.font(.system(size: 18 * scale, weight: .semibold, design: .serif))
                 .lineLimit(1).minimumScaleFactor(0.85)
+            if meaningPlacement == .below { meaning }
             Text(item.ipa.isEmpty ? "IPA未設定" : item.ipa)
                 .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
             Text(item.reading.isEmpty ? "カタカナ未設定" : item.reading)
@@ -119,6 +144,10 @@ private struct InterlinearWord: View {
         }
         .frame(width: columnWidth, alignment: .leading)
         .contentShape(Rectangle())
+    }
+    private var meaning: some View {
+        Text(printWord.meaning.isEmpty ? "意味未設定" : printWord.meaning)
+            .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
     }
 }
 

@@ -36,6 +36,8 @@ public struct SongMetadata: Codable, Equatable, Sendable {
     public var sourceLanguage = "en"
     public var translationLanguage = "ja"
     public var notes = ""
+    /// Optional for documents saved before the Ninth pronunciation selector existed.
+    public var ninthPronunciation: NinthPronunciation?
     public init(title: String = "名称未設定", sourceLanguage: String = "en") {
         self.title = title; self.sourceLanguage = sourceLanguage
     }

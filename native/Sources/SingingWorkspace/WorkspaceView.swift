@@ -41,6 +41,7 @@ final class WorkspaceSession: ObservableObject {
     @Published var bpm = 88.0
     @Published var error: String?
     @Published var textScale = 1.0
+    @Published var meaningPlacement = MeaningPlacement.above
     let guide = GuideTonePlayer()
 
     func activeRange(for song: SongDocument) -> BeatRange? {
@@ -501,6 +502,7 @@ struct WorkspaceView: View {
 
     private func exportSheet(_ format: SheetFormat) {
         let snapshot = song
+        let meaningPlacement = session.meaningPlacement
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.type]
         panel.canCreateDirectories = true
@@ -508,12 +510,12 @@ struct WorkspaceView: View {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title).\(format.fileExtension)"
-        panel.message = "A4の教材として、原文・音節と母音核・IPA・カタカナ読み・語の意味・文の訳を書き出します。"
+        panel.message = "単語の意味は原文の\(meaningPlacement == .above ? "上" : "下")に配置します。画面で選んだ発音・カタカナ読みで書き出します。"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 do {
-                    let sheet = PrintSheet(song: snapshot)
+                    let sheet = PrintSheet(song: snapshot, meaningPlacement: meaningPlacement)
                     let data = try format == .pdf ? PDFSheet.render(sheet) : WordSheet.render(sheet)
                     try data.write(to: url, options: .atomic)
                 } catch {

@@ -11,7 +11,7 @@ public enum PDFSheet {
         guard let context = CGContext(consumer: consumer, mediaBox: &paper, nil) else {
             throw PrintError.creationFailed
         }
-        let painter = PDFPainter(context: context, title: sheet.title, pageSize: paper.size)
+        let painter = PDFPainter(context: context, sheet: sheet, pageSize: paper.size)
         painter.render(sheet)
         context.closePDF()
         return output as Data
@@ -34,6 +34,8 @@ public enum PrintError: Error, LocalizedError {
 private final class PDFPainter {
     private let context: CGContext
     private let title: String
+    private let meaningPlacement: MeaningPlacement
+    private let pronunciationLabel: String?
     private let size: CGSize
     private let teal = NSColor(calibratedRed: 0.05, green: 0.61, blue: 0.65, alpha: 1)
     private let dark = NSColor(calibratedWhite: 0.14, alpha: 1)
@@ -48,8 +50,10 @@ private final class PDFPainter {
     private var footerTop: CGFloat { size.height - 42 }
     private let wordGap: CGFloat = 4
 
-    init(context: CGContext, title: String, pageSize: CGSize) {
-        self.context = context; self.title = title; self.size = pageSize
+    init(context: CGContext, sheet: PrintSheet, pageSize: CGSize) {
+        self.context = context; self.title = sheet.title; self.size = pageSize
+        self.meaningPlacement = sheet.meaningPlacement
+        self.pronunciationLabel = sheet.pronunciationLabel
     }
 
     func render(_ sheet: PrintSheet) {
@@ -76,7 +80,7 @@ private final class PDFPainter {
                  font: .systemFont(ofSize: 9, weight: .semibold), color: teal, tracking: 1.6)
         drawText(title, x: margin, y: 31, width: contentWidth,
                  font: .systemFont(ofSize: 20, weight: .semibold), color: dark)
-        drawText("原文  /  音節  /  IPA  /  カタカナ  /  語の意味  /  文の意味", x: margin, y: 62,
+        drawText(meaningPlacement.legend + (pronunciationLabel.map { "　｜" + $0 } ?? ""), x: margin, y: 62,
                  width: contentWidth, font: .systemFont(ofSize: 9), color: muted)
         fill(CGRect(x: margin, y: 81, width: contentWidth, height: 1), line)
         y = 90
@@ -191,12 +195,15 @@ private final class PDFPainter {
     }
 
     private func drawWord(_ word: PrintWord, x: CGFloat, y: CGFloat, width: CGFloat, row: WordRow) {
-        drawText(word.meaning.isEmpty ? "意味未設定" : word.meaning,
-                 x: x, y: y, width: width, font: .systemFont(ofSize: 8.5), color: muted)
         let lyric = segmented(word)
-        lyric.draw(with: CGRect(x: x, y: y + row.meaningHeight + 2,
+        let lyricY = y + (meaningPlacement == .above ? row.meaningHeight + 2 : 0)
+        let meaningY = y + (meaningPlacement == .below ? row.lyricHeight + 2 : 0)
+        lyric.draw(with: CGRect(x: x, y: lyricY,
                                width: width, height: row.lyricHeight),
                        options: [.usesLineFragmentOrigin, .usesFontLeading])
+        drawText(word.meaning.isEmpty ? "意味未設定" : word.meaning,
+                 x: x, y: meaningY, width: width,
+                 font: .systemFont(ofSize: 8.5), color: muted)
         let ipaY = y + row.meaningHeight + row.lyricHeight + 3
         drawText(word.ipa.isEmpty ? "IPA未設定" : word.ipa,
                  x: x, y: ipaY, width: width, font: .systemFont(ofSize: 8.5), color: dark)

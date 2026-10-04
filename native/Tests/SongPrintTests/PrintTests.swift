@@ -6,6 +6,27 @@ import Testing
 
 @MainActor
 struct PrintTests {
+    @Test func meaningCanMoveBelowWithoutChangingLineSpacing() throws {
+        var song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
+        NinthPronunciation.apply(.stage, to: &song)
+        song.words[0].contextualMeaning.edit("語釈確認")
+        var translations: [CGFloat] = []
+        for placement in MeaningPlacement.allCases {
+            let sheet = PrintSheet(song: song, meaningPlacement: placement)
+            let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
+            let page = try #require(pdf.page(at: 0))
+            #expect(pdf.pageCount == 1)
+            #expect(pdf.string?.contains("劇ドイツ語") == true)
+            #expect(pdf.string?.contains("ブリュー・デル") == true)
+            let lyric = try #require(pdf.findString("Freu·de", withOptions: []).first).bounds(for: page)
+            let gloss = try #require(pdf.findString("語釈確認", withOptions: []).first).bounds(for: page)
+            #expect(placement == .above ? gloss.minY > lyric.minY : gloss.minY < lyric.minY)
+            translations.append(try #require(pdf.findString("文の意味", withOptions: []).first).bounds(for: page).minY)
+        }
+        #expect(translations[0] == translations[1])
+        #expect(PrintSheet(song: song).meaningPlacement == .above)
+    }
+
     @Test func pdfAndWordContainSameEditedContent() throws {
         var song = SampleCatalog.entries[1].make()
         song.metadata.title = "授業用 & <Mary>"

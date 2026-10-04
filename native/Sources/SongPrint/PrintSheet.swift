@@ -85,11 +85,25 @@ public struct PrintPhrase: Sendable {
     public let words: [PrintWord]
 }
 
+public enum MeaningPlacement: String, CaseIterable, Sendable {
+    case above, below
+    public var label: String { self == .above ? "上（元の配置）" : "下（試用）" }
+    public var legend: String {
+        (self == .above ? "単語の意味 → 原文・音節" : "原文・音節 → 単語の意味")
+            + " → 発音記号（IPA） → カタカナ"
+    }
+}
+
 public struct PrintSheet: Sendable {
     public let title: String
     public let phrases: [PrintPhrase]
+    public let meaningPlacement: MeaningPlacement
+    public let pronunciationLabel: String?
 
-    public init(song: SongDocument) {
+    public init(song: SongDocument, meaningPlacement: MeaningPlacement = .above) {
+        self.meaningPlacement = meaningPlacement
+        pronunciationLabel = NinthPronunciation.isAvailable(in: song)
+            ? (song.metadata.ninthPronunciation ?? .standard).label : nil
         title = song.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "歌唱練習シート" : song.metadata.title
         phrases = song.sections.flatMap { section in

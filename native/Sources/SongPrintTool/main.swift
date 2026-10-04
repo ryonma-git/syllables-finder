@@ -7,10 +7,11 @@ import SongPrint
 struct SongPrintTool {
     static func main() throws {
         let arguments = CommandLine.arguments
-        guard arguments.count == 3 else {
+        let options = Array(arguments.dropFirst(3))
+        guard arguments.count >= 3, options.allSatisfy({ ["--meaning-below", "--stage-german"].contains($0) }) else {
             throw PrintError.creationFailed
         }
-        let song: SongDocument
+        var song: SongDocument
         if arguments[1].hasSuffix(".songproj") {
             let source = URL(fileURLWithPath: arguments[1], isDirectory: true)
                 .appendingPathComponent("document.json")
@@ -21,7 +22,11 @@ struct SongPrintTool {
             throw PrintError.creationFailed
         }
         let output = URL(fileURLWithPath: arguments[2])
-        let sheet = PrintSheet(song: song)
+        if options.contains("--stage-german") {
+            guard NinthPronunciation.isAvailable(in: song) else { throw PrintError.creationFailed }
+            NinthPronunciation.apply(.stage, to: &song)
+        }
+        let sheet = PrintSheet(song: song, meaningPlacement: options.contains("--meaning-below") ? .below : .above)
         let data: Data
         switch output.pathExtension.lowercased() {
         case "pdf": data = try PDFSheet.render(sheet)
