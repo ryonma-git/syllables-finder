@@ -36,7 +36,7 @@ public enum WordSheet {
 
     private static func document(_ sheet: PrintSheet) -> String {
         var body = paragraph(sheet.title, style: "Title")
-        body += paragraph(sheet.meaningPlacement.legend + (sheet.pronunciationLabel.map { "　｜" + $0 } ?? "")
+        body += paragraph(sheet.order.legend + (sheet.pronunciationLabel.map { "　｜" + $0 } ?? "")
                           + "。青緑は母音核、· は音節の区切りです。", style: "Translation")
         if sheet.phrases.isEmpty { body += paragraph("歌詞はまだありません。", style: "Translation") }
         var lastSection = ""
@@ -45,17 +45,12 @@ public enum WordSheet {
                 body += paragraph(phrase.section, style: "Section")
                 lastSection = phrase.section
             }
-            body += paragraph(phrase.original, style: "Phrase")
-            if !phrase.translation.isEmpty { body += paragraph("文の意味　" + phrase.translation, style: "Translation", keepNext: true) }
-            let rows = flowRows(phrase.words)
-            for (index, row) in rows.enumerated() {
-                if index > 0 {
-                    body += paragraph("続き｜" + phrase.original, style: "Continuation", keepNext: true)
-                }
-                body += interlinearRow(row.words, widths: row.widths, placement: sheet.meaningPlacement)
-                // Word merges consecutive tables with different grids unless a paragraph separates them.
-                body += paragraph("", style: "RowGap")
+            body += wordBlock(phrase, elements: sheet.order.beforeTranslation)
+            if !phrase.translation.isEmpty {
+                body += paragraph("文の意味　" + phrase.translation, style: "Translation",
+                                  keepNext: !sheet.order.afterTranslation.isEmpty)
             }
+            body += wordBlock(phrase, elements: sheet.order.afterTranslation)
         }
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -63,6 +58,23 @@ public enum WordSheet {
           <w:body>\(body)<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="860" w:bottom="850" w:left="860" w:header="450" w:footer="450"/></w:sectPr></w:body>
         </w:document>
         """
+    }
+
+    private static func wordBlock(_ phrase: PrintPhrase, elements: [ReadingElement]) -> String {
+        guard !elements.isEmpty else { return "" }
+        var result = ""
+        if elements.first == .original || (phrase.words.isEmpty && elements.contains(.original)) {
+            result += paragraph(phrase.original, style: "Phrase")
+        }
+        for (index, row) in flowRows(phrase.words).enumerated() {
+            if index > 0 {
+                result += paragraph("続き｜" + phrase.original, style: "Continuation", keepNext: true)
+            }
+            result += interlinearRow(row.words, widths: row.widths, elements: elements)
+            // Word merges consecutive tables with different grids unless a paragraph separates them.
+            result += paragraph("", style: "RowGap")
+        }
+        return result
     }
 
     private static func flowRows(_ words: [PrintWord]) -> [(words: [PrintWord], widths: [Int])] {
@@ -84,17 +96,26 @@ public enum WordSheet {
         return rows
     }
 
-    private static func interlinearRow(_ words: [PrintWord], widths: [Int], placement: MeaningPlacement) -> String {
+    private static func interlinearRow(_ words: [PrintWord], widths: [Int], elements: [ReadingElement]) -> String {
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         let cells = zip(words, widths).map { word, width in
             let lyric = syllableParagraph(word)
             let meaning = paragraph(word.meaning.isEmpty ? "意味未設定" : word.meaning, style: "Gloss")
+            let ipa = paragraph(word.ipa.isEmpty ? "IPA未設定" : word.ipa, style: "Annotation")
+            let reading = paragraph(word.reading.isEmpty ? "カタカナ未設定" : word.reading, style: "Annotation")
+            let ordered = elements.map { element in
+                switch element {
+                case .original: lyric
+                case .reading: reading
+                case .ipa: ipa
+                case .meaning: meaning
+                case .translation: ""
+                }
+            }.joined()
             return """
             <w:tc><w:tcPr><w:tcW w:w="\(width)" w:type="dxa"/>
             <w:tcMar><w:top w:w="25" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="25" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tcMar></w:tcPr>
-            \(placement == .above ? meaning + lyric : lyric + meaning)
-            \(paragraph(word.ipa.isEmpty ? "IPA未設定" : word.ipa, style: "Annotation"))
-            \(paragraph(word.reading.isEmpty ? "カタカナ未設定" : word.reading, style: "Annotation"))
+            \(ordered)
             </w:tc>
             """
         }.joined()

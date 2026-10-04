@@ -8,7 +8,9 @@ struct SongPrintTool {
     static func main() throws {
         let arguments = CommandLine.arguments
         let options = Array(arguments.dropFirst(3))
-        guard arguments.count >= 3, options.allSatisfy({ ["--meaning-below", "--stage-german"].contains($0) }) else {
+        guard arguments.count >= 3,
+              options.allSatisfy({ $0 == "--stage-german" || $0 == "--meaning-below" || $0.hasPrefix("--order=") }),
+              options.filter({ $0.hasPrefix("--order=") }).count <= 1 else {
             throw PrintError.creationFailed
         }
         var song: SongDocument
@@ -26,7 +28,15 @@ struct SongPrintTool {
             guard NinthPronunciation.isAvailable(in: song) else { throw PrintError.creationFailed }
             NinthPronunciation.apply(.stage, to: &song)
         }
-        let sheet = PrintSheet(song: song, meaningPlacement: options.contains("--meaning-below") ? .below : .above)
+        let order: ReadingOrder
+        if let option = options.first(where: { $0.hasPrefix("--order=") }) {
+            let names = option.dropFirst("--order=".count).split(separator: ",")
+            guard let parsed = ReadingOrder(names.compactMap { ReadingElement(rawValue: String($0)) }) else {
+                throw PrintError.creationFailed
+            }
+            order = parsed
+        } else { order = options.contains("--meaning-below") ? .meaningBelow : .baseline }
+        let sheet = PrintSheet(song: song, order: order)
         let data: Data
         switch output.pathExtension.lowercased() {
         case "pdf": data = try PDFSheet.render(sheet)

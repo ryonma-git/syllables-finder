@@ -6,13 +6,14 @@ struct ReadingView: View {
     let song: SongDocument
     @ObservedObject var session: WorkspaceSession
     let mutate: SongMutation
+    @State private var showingOrderSettings = false
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 13 * session.textScale) {
                     HStack(spacing: 12) {
                         Text("歌詞を読む").font(.system(size: 16 * session.textScale, weight: .semibold))
-                        Text(session.meaningPlacement.legend)
+                        Text(session.readingOrder.legend)
                             .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
                     }.padding(.bottom, 2)
                     ViewThatFits(in: .horizontal) {
@@ -51,9 +52,39 @@ struct ReadingView: View {
 
     @ViewBuilder
     private var displayOptions: some View {
-        Picker("単語の意味", selection: $session.meaningPlacement) {
-            ForEach(MeaningPlacement.allCases, id: \.self) { Text($0.label).tag($0) }
-        }.pickerStyle(.segmented).frame(width: 280)
+        Button("表示順を並び替える…", systemImage: "arrow.up.arrow.down") {
+            showingOrderSettings = true
+        }
+        .popover(isPresented: $showingOrderSettings) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("上から並ぶ順番").font(.headline)
+                Text("矢印で本文・カタカナ・IPA・単語訳・翻訳を自由に動かせます。PDF・Wordも同じ順で書き出します。")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(session.readingOrder.elements, id: \.self) { element in
+                    HStack {
+                        Text(element.label)
+                        Spacer()
+                        let index = session.readingOrder.elements.firstIndex(of: element)!
+                        Button {
+                            session.readingOrder = session.readingOrder.moving(element, by: -1)
+                        } label: { Image(systemName: "arrow.up") }
+                            .help("\(element.label)を上へ")
+                            .disabled(index == 0)
+                        Button {
+                            session.readingOrder = session.readingOrder.moving(element, by: 1)
+                        } label: { Image(systemName: "arrow.down") }
+                            .help("\(element.label)を下へ")
+                            .disabled(index == session.readingOrder.elements.count - 1)
+                    }
+                }
+                Divider()
+                HStack {
+                    Button("今回の並びを試す") { session.readingOrder = .requested }
+                    Spacer()
+                    Button("元の並びに戻す") { session.readingOrder = .baseline }
+                }
+            }.padding(18).frame(width: 410)
+        }
         if NinthPronunciation.isAvailable(in: song) {
             Picker("第九の発音", selection: Binding(
                 get: { song.metadata.ninthPronunciation ?? .standard },
@@ -66,20 +97,27 @@ struct ReadingView: View {
 
     private func phraseLine(_ phrase: Phrase) -> some View {
         VStack(alignment: .leading, spacing: 3 * session.textScale) {
-            Text(phrase.originalText)
-                .font(.system(size: 20 * session.textScale, weight: .semibold, design: .serif))
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            TextField("文の意味を追加", text: Binding(
-                get: { song.phrase(phrase.id)?.translation.value ?? "" },
-                set: { value in mutate("全文訳を編集") { doc in
-                    if let index = doc.phrases.firstIndex(where: { $0.id == phrase.id }) {
-                        doc.phrases[index].translation.edit(value)
-                    }
-                } }
-            ))
-            .textFieldStyle(.plain)
-            .font(.system(size: 12 * session.textScale))
-            .foregroundStyle(.secondary)
+            if !session.readingOrder.beforeTranslation.isEmpty {
+                wordBlock(phrase, elements: session.readingOrder.beforeTranslation)
+            }
+            translation(for: phrase)
+            if !session.readingOrder.afterTranslation.isEmpty {
+                wordBlock(phrase, elements: session.readingOrder.afterTranslation)
+            }
+        }
+        .padding(.vertical, 5 * session.textScale)
+        .padding(.horizontal, 8 * session.textScale)
+        .background(session.phraseID == phrase.id ? Color.teal.opacity(0.045) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    private func wordBlock(_ phrase: Phrase, elements: [ReadingElement]) -> some View {
+        VStack(alignment: .leading, spacing: 3 * session.textScale) {
+            if elements.first == .original {
+                Text(phrase.originalText)
+                    .font(.system(size: 20 * session.textScale, weight: .semibold, design: .serif))
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
             LyricsFlowLayout(horizontalSpacing: 8 * session.textScale, verticalSpacing: 5 * session.textScale) {
                 ForEach(song.words(in: phrase)) { word in
                     Button {
@@ -89,17 +127,27 @@ struct ReadingView: View {
                         InterlinearWord(word: word, syllables: song.syllables(in: word),
                                         language: phrase.language ?? song.metadata.sourceLanguage,
                                         selected: session.wordID == word.id, scale: session.textScale,
-                                        meaningPlacement: session.meaningPlacement)
+                                        elements: elements)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.syllables(in: word).map(\.reading.value).joined(separator: "・"))、詳細を編集")
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 5 * session.textScale)
-        .padding(.horizontal, 8 * session.textScale)
-        .background(session.phraseID == phrase.id ? Color.teal.opacity(0.045) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 5))
+    }
+
+    private func translation(for phrase: Phrase) -> some View {
+        TextField("文の意味を追加", text: Binding(
+            get: { song.phrase(phrase.id)?.translation.value ?? "" },
+            set: { value in mutate("全文訳を編集") { doc in
+                if let index = doc.phrases.firstIndex(where: { $0.id == phrase.id }) {
+                    doc.phrases[index].translation.edit(value)
+                }
+            } }
+        ))
+        .textFieldStyle(.plain)
+        .font(.system(size: 12 * session.textScale))
+        .foregroundStyle(.secondary)
     }
 }
 
@@ -109,7 +157,7 @@ private struct InterlinearWord: View {
     let language: String
     let selected: Bool
     let scale: Double
-    let meaningPlacement: MeaningPlacement
+    let elements: [ReadingElement]
     private var printWord: PrintWord {
         PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
                   syllables: syllables.map { PrintSyllable(text: $0.text.value, language: language) },
@@ -132,14 +180,19 @@ private struct InterlinearWord: View {
     var body: some View {
         let item = printWord
         VStack(alignment: .leading, spacing: 1 * scale) {
-            if meaningPlacement == .above { meaning }
-            coloredLyric.font(.system(size: 18 * scale, weight: .semibold, design: .serif))
-                .lineLimit(1).minimumScaleFactor(0.85)
-            if meaningPlacement == .below { meaning }
-            Text(item.ipa.isEmpty ? "IPA未設定" : item.ipa)
-                .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
-            Text(item.reading.isEmpty ? "カタカナ未設定" : item.reading)
-                .font(.system(size: 11 * scale, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
+            ForEach(elements, id: \.self) { element in
+                switch element {
+                case .original:
+                    coloredLyric.font(.system(size: 18 * scale, weight: .semibold, design: .serif))
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                case .reading: reading
+                case .ipa:
+                    Text(item.ipa.isEmpty ? "IPA未設定" : item.ipa)
+                        .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+                case .meaning: meaning
+                case .translation: EmptyView()
+                }
+            }
             Rectangle().fill(selected ? Color.teal : .clear).frame(height: 2 * scale)
         }
         .frame(width: columnWidth, alignment: .leading)
@@ -148,6 +201,10 @@ private struct InterlinearWord: View {
     private var meaning: some View {
         Text(printWord.meaning.isEmpty ? "意味未設定" : printWord.meaning)
             .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+    }
+    private var reading: some View {
+        Text(printWord.reading.isEmpty ? "カタカナ未設定" : printWord.reading)
+            .font(.system(size: 11 * scale, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
     }
 }
 

@@ -85,23 +85,61 @@ public struct PrintPhrase: Sendable {
     public let words: [PrintWord]
 }
 
-public enum MeaningPlacement: String, CaseIterable, Sendable {
-    case above, below
-    public var label: String { self == .above ? "上（元の配置）" : "下（試用）" }
-    public var legend: String {
-        (self == .above ? "単語の意味 → 原文・音節" : "原文・音節 → 単語の意味")
-            + " → 発音記号（IPA） → カタカナ"
+public enum ReadingElement: String, CaseIterable, Hashable, Sendable {
+    case original, reading, ipa, meaning, translation
+
+    public var label: String {
+        switch self {
+        case .original: "本文・音節"
+        case .reading: "カタカナ"
+        case .ipa: "発音記号（IPA）"
+        case .meaning: "単語訳"
+        case .translation: "翻訳"
+        }
+    }
+}
+
+public struct ReadingOrder: Equatable, Sendable {
+    public let elements: [ReadingElement]
+
+    public init?(_ elements: [ReadingElement]) {
+        guard elements.count == ReadingElement.allCases.count,
+              Set(elements) == Set(ReadingElement.allCases) else { return nil }
+        self.elements = elements
+    }
+
+    public static let baseline = Self([.meaning, .original, .ipa, .reading, .translation])!
+    public static let meaningBelow = Self([.original, .meaning, .ipa, .reading, .translation])!
+    public static let requested = Self([.original, .reading, .ipa, .meaning, .translation])!
+
+    public var legend: String { elements.map(\.label).joined(separator: " → ") }
+
+    public var beforeTranslation: [ReadingElement] {
+        Array(elements.prefix { $0 != .translation })
+    }
+
+    public var afterTranslation: [ReadingElement] {
+        Array(elements.drop { $0 != .translation }.dropFirst())
+    }
+
+    public func moving(_ element: ReadingElement, by offset: Int) -> Self {
+        guard let index = elements.firstIndex(of: element), elements.indices.contains(index + offset) else {
+            return self
+        }
+        var result = elements
+        result.swapAt(index, index + offset)
+        return Self(result)!
     }
 }
 
 public struct PrintSheet: Sendable {
     public let title: String
     public let phrases: [PrintPhrase]
-    public let meaningPlacement: MeaningPlacement
+    public let order: ReadingOrder
     public let pronunciationLabel: String?
 
-    public init(song: SongDocument, meaningPlacement: MeaningPlacement = .above) {
-        self.meaningPlacement = meaningPlacement
+    public init(song: SongDocument, order: ReadingOrder = .baseline) {
+        self.order = order
         pronunciationLabel = NinthPronunciation.isAvailable(in: song)
             ? (song.metadata.ninthPronunciation ?? .standard).label : nil
         title = song.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

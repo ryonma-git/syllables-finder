@@ -21,7 +21,8 @@ IPA・読み・意味の未生成は空値として表示上「未設定」。AI
 SongMetadata.ninthPronunciation は optional（nil/standard は標準、stage は劇ドイツ語）。
 旧文書ではキー欠落を許容。第九サンプルの既知ID・綴り・未編集のIPA/読みの組だけを
 プリセット間で置換し、標準への復帰は原データと一致する。変更は通常の文書編集として保存・Undo対象。
-意味の上下配置は文書には保存せず、WorkspaceSession と PrintSheet の MeaningPlacement に保持する。
+五要素の表示順は曲データには保存しない。ReadingOrder は各要素が一度ずつ現れる順列で、
+WorkspaceSession から利用者のアプリ設定へ保存する。PrintSheet に同じ順列を渡し、PDF/Wordへ適用する。
 
 ## 音楽
 

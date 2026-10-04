@@ -11,8 +11,8 @@ struct PrintTests {
         NinthPronunciation.apply(.stage, to: &song)
         song.words[0].contextualMeaning.edit("語釈確認")
         var translations: [CGFloat] = []
-        for placement in MeaningPlacement.allCases {
-            let sheet = PrintSheet(song: song, meaningPlacement: placement)
+        for order in [ReadingOrder.baseline, .meaningBelow] {
+            let sheet = PrintSheet(song: song, order: order)
             let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
             let page = try #require(pdf.page(at: 0))
             #expect(pdf.pageCount == 1)
@@ -20,11 +20,45 @@ struct PrintTests {
             #expect(pdf.string?.contains("ブリュー・デル") == true)
             let lyric = try #require(pdf.findString("Freu·de", withOptions: []).first).bounds(for: page)
             let gloss = try #require(pdf.findString("語釈確認", withOptions: []).first).bounds(for: page)
-            #expect(placement == .above ? gloss.minY > lyric.minY : gloss.minY < lyric.minY)
+            #expect(order == .baseline ? gloss.minY > lyric.minY : gloss.minY < lyric.minY)
             translations.append(try #require(pdf.findString("文の意味", withOptions: []).first).bounds(for: page).minY)
         }
         #expect(translations[0] == translations[1])
-        #expect(PrintSheet(song: song).meaningPlacement == .above)
+        #expect(PrintSheet(song: song).order == .baseline)
+    }
+
+    @Test func readingFirstKeepsTranslationBelowAnnotatedWords() throws {
+        var song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
+        song.words[0].contextualMeaning.edit("語釈確認")
+        song.phrases[0].translation.edit("翻訳確認")
+        let sheet = PrintSheet(song: song, order: .requested)
+        let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
+        let page = try #require(pdf.page(at: 0))
+        #expect(pdf.pageCount == 1)
+        func position(_ text: String) throws -> CGFloat {
+            try #require(pdf.findString(text, withOptions: []).first).bounds(for: page).minY
+        }
+        let positions = try [position("Freu·de"), position("フロイ・デ"),
+                             position("/ˈfʁɔʏ·də/"), position("語釈確認"), position("翻訳確認")]
+        #expect(zip(positions, positions.dropFirst()).allSatisfy { $0 > $1 })
+        #expect(pdf.string?.contains(ReadingOrder.requested.legend) == true)
+    }
+
+    @Test func arbitraryOrderCanPutTranslationBetweenWordLayers() throws {
+        let order = try #require(ReadingOrder([.reading, .translation, .original, .meaning, .ipa]))
+        #expect(order.beforeTranslation == [.reading])
+        #expect(order.afterTranslation == [.original, .meaning, .ipa])
+        #expect(order.moving(.translation, by: -1).elements == [.translation, .reading, .original, .meaning, .ipa])
+        #expect(ReadingOrder([.original, .original, .ipa, .meaning, .translation]) == nil)
+        let song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
+        let pdf = try #require(PDFDocument(data: PDFSheet.render(PrintSheet(song: song, order: order))))
+        let page = try #require(pdf.page(at: 0))
+        func position(_ text: String) throws -> CGFloat {
+            try #require(pdf.findString(text, withOptions: []).first).bounds(for: page).minY
+        }
+        let positions = try [position("フロイ・デ"), position("歓喜よ"), position("Freu·de"),
+                             position("/ˈfʁɔʏ·də/")]
+        #expect(zip(positions, positions.dropFirst()).allSatisfy { $0 > $1 })
     }
 
     @Test func pdfAndWordContainSameEditedContent() throws {

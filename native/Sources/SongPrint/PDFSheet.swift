@@ -34,7 +34,7 @@ public enum PrintError: Error, LocalizedError {
 private final class PDFPainter {
     private let context: CGContext
     private let title: String
-    private let meaningPlacement: MeaningPlacement
+    private let order: ReadingOrder
     private let pronunciationLabel: String?
     private let size: CGSize
     private let teal = NSColor(calibratedRed: 0.05, green: 0.61, blue: 0.65, alpha: 1)
@@ -52,7 +52,7 @@ private final class PDFPainter {
 
     init(context: CGContext, sheet: PrintSheet, pageSize: CGSize) {
         self.context = context; self.title = sheet.title; self.size = pageSize
-        self.meaningPlacement = sheet.meaningPlacement
+        self.order = sheet.order
         self.pronunciationLabel = sheet.pronunciationLabel
     }
 
@@ -80,7 +80,7 @@ private final class PDFPainter {
                  font: .systemFont(ofSize: 9, weight: .semibold), color: teal, tracking: 1.6)
         drawText(title, x: margin, y: 31, width: contentWidth,
                  font: .systemFont(ofSize: 20, weight: .semibold), color: dark)
-        drawText(meaningPlacement.legend + (pronunciationLabel.map { "　｜" + $0 } ?? ""), x: margin, y: 62,
+        drawText(order.legend + (pronunciationLabel.map { "　｜" + $0 } ?? ""), x: margin, y: 62,
                  width: contentWidth, font: .systemFont(ofSize: 9), color: muted)
         fill(CGRect(x: margin, y: 81, width: contentWidth, height: 1), line)
         y = 90
@@ -107,15 +107,23 @@ private final class PDFPainter {
 
     private func drawPhrase(_ phrase: PrintPhrase, index: Int) {
         let rows = flow(phrase.words)
-        let fallbackHeight = rows.isEmpty
-            ? textHeight(phrase.original, width: contentWidth - 30,
-                         font: .systemFont(ofSize: 13, weight: .semibold)) : 0
+        let before = order.beforeTranslation
+        let after = order.afterTranslation
+        func blockHeight(_ elements: [ReadingElement]) -> CGFloat {
+            guard !elements.isEmpty else { return 0 }
+            if rows.isEmpty {
+                return elements.contains(.original) ?
+                    textHeight(phrase.original, width: contentWidth - 30,
+                               font: .systemFont(ofSize: 13, weight: .semibold)) : 0
+            }
+            return rows.reduce(0) { $0 + $1.height(for: elements) + 2 }
+        }
         let translationHeight = phrase.translation.isEmpty ? 0 :
             textHeight(phrase.translation, width: contentWidth - 78, font: .systemFont(ofSize: 10)) + 3
-        let wholeHeight = fallbackHeight + rows.reduce(CGFloat(0)) { $0 + $1.height + 2 }
-            + CGFloat(translationHeight) + 6 + (phrase.section == section ? 0 : 14)
+        let wholeHeight = blockHeight(before) + blockHeight(after) + CGFloat(translationHeight)
+            + 6 + (phrase.section == section ? 0 : 14)
         if wholeHeight < footerTop - 100 && y + wholeHeight > footerTop - 10 { endPage(); startPage() }
-        ensure((rows.first?.height ?? fallbackHeight) + 8)
+        ensure(min(wholeHeight, (rows.first?.height(for: before) ?? blockHeight(before)) + 8))
         if section != phrase.section {
             section = phrase.section
             drawText(section, x: margin, y: y, width: contentWidth,
@@ -124,24 +132,7 @@ private final class PDFPainter {
         }
         drawText(String(format: "%02d", index + 1), x: margin, y: y + 1, width: 28,
                  font: .monospacedDigitSystemFont(ofSize: 10, weight: .semibold), color: teal)
-        if rows.isEmpty {
-            y += drawText(phrase.original, x: margin + 30, y: y, width: contentWidth - 30,
-                          font: .systemFont(ofSize: 13, weight: .semibold), color: dark)
-        }
-        for row in rows {
-            if ensure(row.height + 2) {
-                drawText("\(phrase.section)  /  \(String(format: "%02d", index + 1))（続き）",
-                         x: margin, y: y, width: contentWidth,
-                         font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
-                y += 14
-            }
-            var x = margin + 30
-            for (word, width) in zip(row.words, row.widths) {
-                drawWord(word, x: x, y: y, width: width, row: row)
-                x += width + wordGap
-            }
-            y += row.height + 2
-        }
+        drawBlock(phrase, index: index, rows: rows, elements: before)
         if !phrase.translation.isEmpty {
             ensure(CGFloat(translationHeight) + 3)
             drawText("文の意味", x: margin + 30, y: y + 1, width: 54,
@@ -150,7 +141,34 @@ private final class PDFPainter {
                      font: .systemFont(ofSize: 10), color: dark)
             y += CGFloat(translationHeight)
         }
+        drawBlock(phrase, index: index, rows: rows, elements: after)
         y += 6
+    }
+
+    private func drawBlock(_ phrase: PrintPhrase, index: Int, rows: [WordRow],
+                           elements: [ReadingElement]) {
+        guard !elements.isEmpty else { return }
+        if rows.isEmpty {
+            if elements.contains(.original) {
+                y += drawText(phrase.original, x: margin + 30, y: y, width: contentWidth - 30,
+                              font: .systemFont(ofSize: 13, weight: .semibold), color: dark)
+            }
+            return
+        }
+        for row in rows {
+            if ensure(row.height(for: elements) + 2) {
+                drawText("\(phrase.section)  /  \(String(format: "%02d", index + 1))（続き）",
+                         x: margin, y: y, width: contentWidth,
+                         font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
+                y += 14
+            }
+            var x = margin + 30
+            for (word, width) in zip(row.words, row.widths) {
+                drawWord(word, x: x, y: y, width: width, row: row, elements: elements)
+                x += width + wordGap
+            }
+            y += row.height(for: elements) + 2
+        }
     }
 
     private struct WordRow {
@@ -160,7 +178,18 @@ private final class PDFPainter {
         var lyricHeight: CGFloat
         var ipaHeight: CGFloat
         var readingHeight: CGFloat
-        var height: CGFloat { meaningHeight + lyricHeight + ipaHeight + readingHeight + 5 }
+        func height(for element: ReadingElement) -> CGFloat {
+            switch element {
+            case .original: lyricHeight
+            case .reading: readingHeight
+            case .ipa: ipaHeight
+            case .meaning: meaningHeight
+            case .translation: 0
+            }
+        }
+        func height(for elements: [ReadingElement]) -> CGFloat {
+            elements.reduce(CGFloat(1)) { $0 + height(for: $1) + 1 }
+        }
     }
 
     private func flow(_ words: [PrintWord]) -> [WordRow] {
@@ -194,22 +223,27 @@ private final class PDFPainter {
         return rows
     }
 
-    private func drawWord(_ word: PrintWord, x: CGFloat, y: CGFloat, width: CGFloat, row: WordRow) {
-        let lyric = segmented(word)
-        let lyricY = y + (meaningPlacement == .above ? row.meaningHeight + 2 : 0)
-        let meaningY = y + (meaningPlacement == .below ? row.lyricHeight + 2 : 0)
-        lyric.draw(with: CGRect(x: x, y: lyricY,
-                               width: width, height: row.lyricHeight),
-                       options: [.usesLineFragmentOrigin, .usesFontLeading])
-        drawText(word.meaning.isEmpty ? "意味未設定" : word.meaning,
-                 x: x, y: meaningY, width: width,
-                 font: .systemFont(ofSize: 8.5), color: muted)
-        let ipaY = y + row.meaningHeight + row.lyricHeight + 3
-        drawText(word.ipa.isEmpty ? "IPA未設定" : word.ipa,
-                 x: x, y: ipaY, width: width, font: .systemFont(ofSize: 8.5), color: dark)
-        drawText(word.reading.isEmpty ? "カタカナ未設定" : word.reading,
-                 x: x, y: ipaY + row.ipaHeight + 2, width: width,
-                 font: .systemFont(ofSize: 8.5), color: muted)
+    private func drawWord(_ word: PrintWord, x: CGFloat, y: CGFloat, width: CGFloat,
+                          row: WordRow, elements: [ReadingElement]) {
+        var position = y
+        for element in elements {
+            switch element {
+            case .original:
+                segmented(word).draw(with: CGRect(x: x, y: position, width: width, height: row.lyricHeight),
+                                     options: [.usesLineFragmentOrigin, .usesFontLeading])
+            case .reading:
+                drawText(word.reading.isEmpty ? "カタカナ未設定" : word.reading,
+                         x: x, y: position, width: width, font: .systemFont(ofSize: 8.5), color: muted)
+            case .ipa:
+                drawText(word.ipa.isEmpty ? "IPA未設定" : word.ipa,
+                         x: x, y: position, width: width, font: .systemFont(ofSize: 8.5), color: dark)
+            case .meaning:
+                drawText(word.meaning.isEmpty ? "意味未設定" : word.meaning,
+                         x: x, y: position, width: width, font: .systemFont(ofSize: 8.5), color: muted)
+            case .translation: break
+            }
+            position += row.height(for: element) + 1
+        }
     }
 
     private func segmented(_ word: PrintWord) -> NSAttributedString {
