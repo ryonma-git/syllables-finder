@@ -4,13 +4,13 @@ import Testing
 
 struct SongCoreTests {
     @Test func sampleCatalogSongsHaveCompleteSyllableNoteAlignment() throws {
-        #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "morning"])
+        #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "ninth", "morning"])
         for entry in SampleCatalog.entries {
             let song = entry.make()
             try song.validate()
             #expect(song == entry.make())
             #expect(!song.phrases.isEmpty)
-            if entry.id != "morning" {
+            if entry.id != "morning" && entry.id != "ninth" {
                 #expect(song.syllables.count == song.music.events.compactMap(\.note).count)
                 #expect(song.syllables.allSatisfy { !$0.reading.value.isEmpty && !$0.ipa.value.isEmpty })
                 #expect(song.syllables.allSatisfy { syllable in
@@ -18,6 +18,19 @@ struct SongCoreTests {
                 })
             }
         }
+    }
+
+    @Test func ninthSampleHasFourAnnotatedLinesWithoutInventedNotes() throws {
+        let song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
+        try song.validate()
+        #expect(song.phrases.count == 4)
+        #expect(song.music.events.isEmpty)
+        #expect(song.alignments.isEmpty)
+        #expect(song.phrases[0].originalText == "Freude, schöner Götterfunken, Tochter aus Elysium!")
+        #expect(song.words.count == 30)
+        #expect(song.words.allSatisfy { !$0.contextualMeaning.value.isEmpty })
+        #expect(song.syllables.allSatisfy { !$0.ipa.value.isEmpty && !$0.reading.value.isEmpty })
+        #expect(try SongDocument.decode(song.encoded()) == song)
     }
 
     @Test func maryEndsWithTheExpectedPickupAndFourBeatTonic() throws {

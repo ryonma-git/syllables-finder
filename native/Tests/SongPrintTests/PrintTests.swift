@@ -37,6 +37,9 @@ struct PrintTests {
         #expect(word.fragments == [PrintFragment(text: "sch", isVowelNucleus: false)])
         let french = PrintSyllable(text: "Frè", language: "fr")
         #expect(french.fragments == [PrintFragment(text: "Frè", isVowelNucleus: false)])
+        let german = PrintSyllable(text: "schö", language: "de")
+        #expect(german.fragments == [PrintFragment(text: "sch", isVowelNucleus: false),
+                                      PrintFragment(text: "ö", isVowelNucleus: true)])
     }
 
     @Test func partialKatakanaRemainsVisible() throws {
@@ -46,5 +49,16 @@ struct PrintTests {
         song.syllables[index].reading.edit("")
         let word = try #require(PrintSheet(song: song).phrases.first?.words.first)
         #expect(word.reading == "□・リー")
+    }
+
+    @Test func ninthLyricsSheetShowsGermanAndJapaneseOnOnePage() throws {
+        let song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
+        let sheet = PrintSheet(song: song)
+        let pdf = try PDFSheet.render(sheet)
+        let document = try #require(PDFDocument(data: pdf))
+        #expect(document.pageCount == 1)
+        #expect(document.string?.contains("Göt·ter·fun·ken") == true)
+        #expect(document.string?.contains("フロイ・デ") == true)
+        #expect(document.string?.contains("歓喜よ") == true)
     }
 }

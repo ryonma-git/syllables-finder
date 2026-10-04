@@ -339,7 +339,7 @@ struct WorkspaceView: View {
         return HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("サンプル曲").font(.title2.bold())
-                Text("曲を選ぶと、歌詞・読み・音符を確認できます。")
+                Text("歌詞・読みを確認できます。音符の有無はサンプルごとに異なります。")
                     .font(.callout).foregroundStyle(.secondary)
                 ForEach(SampleCatalog.entries) { entry in
                     Button { selectedSampleID = entry.id } label: {

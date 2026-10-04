@@ -17,20 +17,23 @@ public struct PrintSyllable: Sendable, Equatable {
 
     public init(text: String, language: String) {
         self.text = text
-        // This is an orthographic cue for English syllables already stored in the document.
+        // This is an orthographic cue for English and German syllables already stored in the document.
         // It does not infer an IPA transcription or change the saved pronunciation.
-        guard language.hasPrefix("en") else {
+        let english = language.hasPrefix("en")
+        let german = language.hasPrefix("de")
+        guard english || german else {
             fragments = [.init(text: text, isVowelNucleus: false)]
             return
         }
         let letters = Array(text)
-        guard let start = letters.indices.first(where: { "aeiouy".contains(letters[$0].lowercased()) }) else {
+        let vowels = german ? "aeiouyäöü" : "aeiouy"
+        guard let start = letters.indices.first(where: { vowels.contains(letters[$0].lowercased()) }) else {
             fragments = [.init(text: text, isVowelNucleus: false)]
             return
         }
         var end = start + 1
-        while end < letters.count && "aeiouy".contains(letters[end].lowercased()) { end += 1 }
-        if end < letters.count && letters[end].lowercased() == "w" { end += 1 }
+        while end < letters.count && vowels.contains(letters[end].lowercased()) { end += 1 }
+        if english && end < letters.count && letters[end].lowercased() == "w" { end += 1 }
         var parts: [PrintFragment] = []
         if start > 0 { parts.append(.init(text: String(letters[..<start]), isVowelNucleus: false)) }
         parts.append(.init(text: String(letters[start..<end]), isVowelNucleus: true))

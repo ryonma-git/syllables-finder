@@ -24,6 +24,8 @@ public enum SampleCatalog {
               details: "隣り合う音の上下と、長い語尾を練習します。", factory: makeMary),
         .init(id: "frere", title: "Frère Jacques", subtitle: "フランス語 · 8小節 · 32音節",
               details: "繰り返しの旋律で、読みとIPAを見比べます。", factory: makeFrereJacques),
+        .init(id: "ninth", title: "第九・歓喜の歌（歌詞）", subtitle: "ドイツ語 · 第1節4行 · 歌詞のみ",
+              details: "写真にある『歓喜の歌』第1節。原語・意味・音節・IPA・カタカナを読むためのサンプルです。音符は未入力です。", factory: makeNinth),
         .init(id: "morning", title: "Morning light", subtitle: "オリジナル · 2小節",
               details: "短い操作練習用のサンプルです。", factory: SampleSongDocument.make)
     ]
@@ -53,7 +55,8 @@ public enum SampleCatalog {
     }
 
     private static func makeSong(title: String, language: String, notes: String,
-                                 bpm: Double, serialStart: Int, lines: [LineSpec]) -> SongDocument {
+                                 bpm: Double, serialStart: Int, withMusic: Bool = true,
+                                 lines: [LineSpec]) -> SongDocument {
         var serial = serialStart
         func id() -> UUID {
             serial += 1
@@ -63,13 +66,14 @@ public enum SampleCatalog {
         var song = SongDocument()
         song.id = id()
         song.metadata = .init(title: title, sourceLanguage: language)
-        song.metadata.notes = notes + " 読みとIPAは練習用の近似です。ガイド音はこのアプリ内で単旋律から生成します。"
+        song.metadata.notes = notes + " 読みとIPAは練習用の近似です。" +
+            (withMusic ? "ガイド音はこのアプリ内で単旋律から生成します。" : "")
         song.music.tempos = [.init(bpm: bpm)]
         var cursor = 0.0
         let sectionID = id()
         for line in lines {
             precondition(line.pitches.count == line.durations.count)
-            precondition(line.words.flatMap(\.syllables).count == line.pitches.count)
+            precondition(!withMusic || line.words.flatMap(\.syllables).count == line.pitches.count)
             let phraseID = id()
             let start = cursor
             var eventIDs: [UUID] = []
@@ -91,26 +95,93 @@ public enum SampleCatalog {
                                             text: sound.text, ipa: sound.ipa, reading: sound.reading)
                     song.syllables.append(syllable)
                     word.syllableIDs.append(syllable.id)
-                    song.alignments.append(.init(id: id(), languageTargets: [.init(.syllable, syllable.id)],
-                                                 musicTargets: [.event(eventIDs[noteIndex])], relation: .syllabic))
-                    noteIndex += 1
+                    if withMusic {
+                        song.alignments.append(.init(id: id(), languageTargets: [.init(.syllable, syllable.id)],
+                                                     musicTargets: [.event(eventIDs[noteIndex])], relation: .syllabic))
+                        noteIndex += 1
+                    }
                 }
                 song.words.append(word)
                 wordIDs.append(word.id)
             }
             let range = BeatRange(start: beat(start), end: beat(cursor))
             song.phrases.append(.init(id: phraseID, originalText: line.text, translation: line.translation,
-                                      wordIDs: wordIDs, timeRange: range, musicalEventIDs: eventIDs))
-            song.music.spans.append(.init(id: id(), kind: .phrase, title: line.text, range: range, eventIDs: eventIDs))
+                                      wordIDs: wordIDs, timeRange: withMusic ? range : nil,
+                                      musicalEventIDs: eventIDs))
+            if withMusic {
+                song.music.spans.append(.init(id: id(), kind: .phrase, title: line.text, range: range, eventIDs: eventIDs))
+            }
         }
-        let measureCount = Int(ceil(cursor / 4))
+        let measureCount = withMusic ? Int(ceil(cursor / 4)) : 0
         song.music.measures = (0..<measureCount).map { index in
             Measure(id: id(), number: "\(index + 1)",
                     range: .init(start: beat(Double(index * 4)), end: beat(min(cursor, Double((index + 1) * 4)))))
         }
         song.sections = [.init(id: sectionID, title: "第1節", phraseIDs: song.phrases.map(\.id))]
-        song.ensureParts(defaultPartID: id())
+        if withMusic {
+            song.ensureParts(defaultPartID: id())
+        } else {
+            song.music.parts = [.init(id: id(), name: "歌詞のみ")]
+        }
         return song
+    }
+
+    private static func makeNinth() -> SongDocument {
+        // Schiller's text, as printed in the user's reference. These four lines are a reading
+        // sample; no melody is inferred from the photograph. IPA and kana are rehearsal guides.
+        func w(_ surface: String, _ meaning: String, _ sounds: [(String, String, String)]) -> WordSpec {
+            .init(surface, meaning, sounds.map { .init($0.0, $0.1, $0.2) })
+        }
+        return makeSong(title: "第九・歓喜の歌（歌詞）", language: "de",
+                        notes: "シラー『歓喜に寄す』の第1節（提示された写真の範囲）。歌詞レイアウト確認用。音符は未入力。",
+                        bpm: 100, serialStart: 40_000, withMusic: false, lines: [
+            .init(text: "Freude, schöner Götterfunken, Tochter aus Elysium!",
+                  translation: "歓喜よ、美しい神々の火花よ、エリュシオンから来た娘よ！",
+                  words: [
+                    w("Freude,", "歓喜", [("Freu", "ˈfʁɔʏ", "フロイ"), ("de", "də", "デ")]),
+                    w("schöner", "美しい", [("schö", "ˈʃøː", "シェー"), ("ner", "nɐ", "ナー")]),
+                    w("Götterfunken,", "神々の火花", [("Göt", "ˈɡœt", "ゲッ"), ("ter", "ɐ", "ター"), ("fun", "ˌfʊŋ", "フン"), ("ken", "kən", "ケン")]),
+                    w("Tochter", "娘", [("Toch", "ˈtɔx", "トホ"), ("ter", "tɐ", "ター")]),
+                    w("aus", "〜から", [("aus", "aʊs", "アウス")]),
+                    w("Elysium!", "エリュシオン", [("E", "e", "エ"), ("ly", "ˈlyː", "リュー"), ("si", "zi", "ズィ"), ("um", "ʊm", "ウム")])
+                  ], pitches: [], durations: []),
+            .init(text: "Wir betreten feuertrunken, Himmlische, dein Heiligtum!",
+                  translation: "私たちは炎に酔うように、天上の存在よ、あなたの聖域へ足を踏み入れる。",
+                  words: [
+                    w("Wir", "私たちは", [("Wir", "viːɐ", "ヴィーア")]),
+                    w("betreten", "足を踏み入れる", [("be", "bə", "ベ"), ("tre", "ˈtʁeː", "トレー"), ("ten", "tən", "テン")]),
+                    w("feuertrunken,", "炎に酔って", [("feu", "ˈfɔʏ", "フォイ"), ("er", "ɐ", "アー"), ("trun", "ˌtʁʊŋ", "トゥルン"), ("ken", "kən", "ケン")]),
+                    w("Himmlische,", "天上の存在よ", [("Himm", "ˈhɪm", "ヒム"), ("li", "lɪ", "リ"), ("sche", "ʃə", "シェ")]),
+                    w("dein", "あなたの", [("dein", "daɪn", "ダイン")]),
+                    w("Heiligtum!", "聖域", [("Hei", "ˈhaɪ", "ハイ"), ("lig", "lɪç", "リヒ"), ("tum", "tuːm", "トゥーム")])
+                  ], pitches: [], durations: []),
+            .init(text: "Deine Zauber binden wieder, was die Mode streng geteilt;",
+                  translation: "あなたの魔法は、時代の風潮が厳しく分けたものを再び結び合わせる。",
+                  words: [
+                    w("Deine", "あなたの", [("Dei", "ˈdaɪ", "ダイ"), ("ne", "nə", "ネ")]),
+                    w("Zauber", "魔法", [("Zau", "ˈtsaʊ", "ツァウ"), ("ber", "bɐ", "バー")]),
+                    w("binden", "結ぶ", [("bin", "ˈbɪn", "ビン"), ("den", "dən", "デン")]),
+                    w("wieder,", "再び", [("wie", "ˈviː", "ヴィー"), ("der", "dɐ", "ダー")]),
+                    w("was", "〜するもの", [("was", "vas", "ヴァス")]),
+                    w("die", "その", [("die", "diː", "ディー")]),
+                    w("Mode", "時代の風潮", [("Mo", "ˈmoː", "モー"), ("de", "də", "デ")]),
+                    w("streng", "厳しく", [("streng", "ʃtʁɛŋ", "シュトレング")]),
+                    w("geteilt;", "分けた", [("ge", "ɡə", "ゲ"), ("teilt", "ˈtaɪlt", "タイルト")])
+                  ], pitches: [], durations: []),
+            .init(text: "alle Menschen werden Brüder, wo dein sanfter Flügel weilt.",
+                  translation: "すべての人は兄弟となる、あなたの優しい翼がとどまるところで。",
+                  words: [
+                    w("alle", "すべての", [("al", "ˈal", "ア"), ("le", "lə", "レ")]),
+                    w("Menschen", "人々", [("Men", "ˈmɛn", "メン"), ("schen", "ʃən", "シェン")]),
+                    w("werden", "〜となる", [("wer", "ˈveːɐ", "ヴェーア"), ("den", "dən", "デン")]),
+                    w("Brüder,", "兄弟", [("Brü", "ˈbʁyː", "ブリュー"), ("der", "dɐ", "ダー")]),
+                    w("wo", "〜する所で", [("wo", "voː", "ヴォー")]),
+                    w("dein", "あなたの", [("dein", "daɪn", "ダイン")]),
+                    w("sanfter", "優しい", [("sanf", "ˈzanf", "ザンフ"), ("ter", "tɐ", "ター")]),
+                    w("Flügel", "翼", [("Flü", "ˈflyː", "フリュー"), ("gel", "ɡəl", "ゲル")]),
+                    w("weilt.", "とどまる", [("weilt", "vaɪlt", "ヴァイルト")])
+                  ], pitches: [], durations: [])
+        ])
     }
 
     private static func makeMary() -> SongDocument {
