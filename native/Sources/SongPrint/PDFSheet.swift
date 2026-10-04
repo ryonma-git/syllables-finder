@@ -119,7 +119,7 @@ private final class PDFPainter {
             return rows.reduce(0) { $0 + $1.height(for: elements) + 2 }
         }
         let translationHeight = phrase.translation.isEmpty ? 0 :
-            textHeight(phrase.translation, width: contentWidth - 78, font: .systemFont(ofSize: 10)) + 3
+            textHeight(phrase.translation, width: contentWidth - 30, font: .systemFont(ofSize: 10)) + 3
         let wholeHeight = blockHeight(before) + blockHeight(after) + CGFloat(translationHeight)
             + 6 + (phrase.section == section ? 0 : 14)
         if wholeHeight < footerTop - 100 && y + wholeHeight > footerTop - 10 { endPage(); startPage() }
@@ -135,9 +135,7 @@ private final class PDFPainter {
         drawBlock(phrase, index: index, rows: rows, elements: before)
         if !phrase.translation.isEmpty {
             ensure(CGFloat(translationHeight) + 3)
-            drawText("文の意味", x: margin + 30, y: y + 1, width: 54,
-                     font: .systemFont(ofSize: 9, weight: .semibold), color: teal)
-            drawText(phrase.translation, x: margin + 84, y: y, width: contentWidth - 84,
+            drawText(phrase.translation, x: margin + 30, y: y, width: contentWidth - 30,
                      font: .systemFont(ofSize: 10), color: dark)
             y += CGFloat(translationHeight)
         }

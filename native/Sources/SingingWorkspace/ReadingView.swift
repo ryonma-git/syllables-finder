@@ -14,6 +14,9 @@ struct ReadingView: View {
                 LazyVStack(alignment: .leading, spacing: 13 * session.textScale) {
                     HStack(spacing: 12) {
                         Text("歌詞を読む").font(.system(size: 16 * session.textScale, weight: .semibold))
+                        Text(Syllabifier.displayName(for: song.metadata.sourceLanguage))
+                            .font(.system(size: 11 * session.textScale, weight: .semibold))
+                            .foregroundStyle(.teal)
                         Text(preferences.readingOrder.legend)
                             .font(.system(size: 11 * session.textScale)).foregroundStyle(.secondary)
                     }.padding(.bottom, 2)

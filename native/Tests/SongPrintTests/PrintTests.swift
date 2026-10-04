@@ -18,10 +18,11 @@ struct PrintTests {
             #expect(pdf.pageCount == 1)
             #expect(pdf.string?.contains("劇ドイツ語") == true)
             #expect(pdf.string?.contains("ブリュー・デル") == true)
+            #expect(pdf.string?.contains("文の意味") == false)
             let lyric = try #require(pdf.findString("Freu·de", withOptions: []).first).bounds(for: page)
             let gloss = try #require(pdf.findString("語釈確認", withOptions: []).first).bounds(for: page)
             #expect(order == .previous ? gloss.minY > lyric.minY : gloss.minY < lyric.minY)
-            translations.append(try #require(pdf.findString("文の意味", withOptions: []).first).bounds(for: page).minY)
+            translations.append(try #require(pdf.findString("歓喜よ", withOptions: []).first).bounds(for: page).minY)
         }
         #expect(translations[0] == translations[1])
         #expect(PrintSheet(song: song).order == .baseline)

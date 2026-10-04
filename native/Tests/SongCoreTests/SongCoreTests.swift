@@ -4,19 +4,36 @@ import Testing
 
 struct SongCoreTests {
     @Test func sampleCatalogSongsHaveCompleteSyllableNoteAlignment() throws {
-        #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "ninth", "morning"])
+        #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "ninth", "morning",
+                                                   "entchen", "pollitos", "martino", "adeste", "birch",
+                                                   "sakura", "arirang", "jasmine"])
+        #expect(Set(SampleCatalog.entries.map(\.languageCode)) == Set(Syllabifier.languages.map(\.id)))
         for entry in SampleCatalog.entries {
             let song = entry.make()
             try song.validate()
             #expect(song == entry.make())
             #expect(!song.phrases.isEmpty)
-            if entry.id != "morning" && entry.id != "ninth" {
-                #expect(song.syllables.count == song.music.events.compactMap(\.note).count)
+            #expect(song.metadata.sourceLanguage == entry.languageCode)
+            if entry.id != "morning" {
                 #expect(song.syllables.allSatisfy { !$0.reading.value.isEmpty && !$0.ipa.value.isEmpty })
+            }
+            if !song.music.events.isEmpty && entry.id != "morning" {
+                #expect(song.syllables.count == song.music.events.compactMap(\.note).count)
                 #expect(song.syllables.allSatisfy { syllable in
                     song.alignments.contains { $0.languageTargets.contains(.init(.syllable, syllable.id)) }
                 })
             }
+        }
+    }
+
+    @Test func traditionalSamplesAreAnnotatedWithoutInventedMusic() throws {
+        for entry in TraditionalSamples.entries {
+            let song = entry.make()
+            #expect(song.music.events.isEmpty && song.alignments.isEmpty)
+            #expect(song.words.allSatisfy { !$0.contextualMeaning.value.isEmpty })
+            #expect(song.phrases.allSatisfy { !$0.translation.value.isEmpty })
+            #expect(song.phrases.allSatisfy { !$0.originalText.isEmpty })
+            #expect(try SongDocument.decode(song.encoded()) == song)
         }
     }
 

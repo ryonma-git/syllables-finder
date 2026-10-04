@@ -41,6 +41,10 @@ public enum Syllabifier {
 
     public static func supports(_ language: String) -> Bool { languages.contains { $0.id == language } }
 
+    public static func displayName(for language: String) -> String {
+        languages.first { $0.id == language }?.name ?? language
+    }
+
     // MARK: Tokenizing a lyric line
 
     public static func tokenize(_ line: String, language: String) -> [LyricToken] {

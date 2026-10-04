@@ -3,34 +3,43 @@ import Foundation
 public struct SampleEntry: Identifiable, Sendable {
     public let id: String
     public let title: String
+    public let languageCode: String
     public let subtitle: String
     public let details: String
     private let factory: @Sendable () -> SongDocument
 
-    public init(id: String, title: String, subtitle: String, details: String,
+    public init(id: String, title: String, languageCode: String, subtitle: String, details: String,
                 factory: @escaping @Sendable () -> SongDocument) {
-        self.id = id; self.title = title; self.subtitle = subtitle; self.details = details
+        self.id = id; self.title = title; self.languageCode = languageCode
+        self.subtitle = subtitle; self.details = details
         self.factory = factory
     }
 
+    public var languageName: String {
+        switch languageCode {
+        case "la": "ラテン語"
+        case "zh": "中国語"
+        default: Syllabifier.displayName(for: languageCode)
+        }
+    }
     public func make() -> SongDocument { factory() }
 }
 
 public enum SampleCatalog {
     public static let entries: [SampleEntry] = [
-        .init(id: "twinkle", title: "きらきら星", subtitle: "英語 · 12小節 · 42音節",
+        .init(id: "twinkle", title: "きらきら星", languageCode: "en", subtitle: "12小節 · 42音節",
               details: "よく知られた旋律で、音節と音符を一つずつ確かめられます。", factory: TwinkleSample.make),
-        .init(id: "mary", title: "Mary Had a Little Lamb", subtitle: "英語 · 8小節 · 26音節",
+        .init(id: "mary", title: "Mary Had a Little Lamb", languageCode: "en", subtitle: "8小節 · 26音節",
               details: "隣り合う音の上下と、長い語尾を練習します。", factory: makeMary),
-        .init(id: "frere", title: "Frère Jacques", subtitle: "フランス語 · 8小節 · 32音節",
+        .init(id: "frere", title: "Frère Jacques", languageCode: "fr", subtitle: "8小節 · 32音節",
               details: "繰り返しの旋律で、読みとIPAを見比べます。", factory: makeFrereJacques),
-        .init(id: "ninth", title: "第九・歓喜の歌（歌詞）", subtitle: "ドイツ語 · 第1節4行 · 歌詞のみ",
+        .init(id: "ninth", title: "第九・歓喜の歌（歌詞）", languageCode: "de", subtitle: "第1節4行 · 歌詞のみ",
               details: "写真にある『歓喜の歌』第1節。原語・意味・音節・IPA・カタカナを読むためのサンプルです。音符は未入力です。", factory: makeNinth),
-        .init(id: "morning", title: "Morning light", subtitle: "オリジナル · 2小節",
+        .init(id: "morning", title: "Morning light", languageCode: "en", subtitle: "オリジナル · 2小節",
               details: "短い操作練習用のサンプルです。", factory: SampleSongDocument.make)
-    ]
+    ] + TraditionalSamples.entries
 
-    private struct SyllableSpec {
+    struct SyllableSpec {
         let text: String
         let ipa: String
         let reading: String
@@ -38,7 +47,7 @@ public enum SampleCatalog {
             self.text = text; self.ipa = ipa; self.reading = reading
         }
     }
-    private struct WordSpec {
+    struct WordSpec {
         let surface: String
         let meaning: String
         let syllables: [SyllableSpec]
@@ -46,7 +55,7 @@ public enum SampleCatalog {
             self.surface = surface; self.meaning = meaning; self.syllables = syllables
         }
     }
-    private struct LineSpec {
+    struct LineSpec {
         let text: String
         let translation: String
         let words: [WordSpec]
@@ -54,7 +63,7 @@ public enum SampleCatalog {
         let durations: [Double]
     }
 
-    private static func makeSong(title: String, language: String, notes: String,
+    static func makeSong(title: String, language: String, notes: String,
                                  bpm: Double, serialStart: Int, withMusic: Bool = true,
                                  lines: [LineSpec]) -> SongDocument {
         var serial = serialStart

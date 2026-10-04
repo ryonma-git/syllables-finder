@@ -241,6 +241,9 @@ struct WorkspaceView: View {
                 .textFieldStyle(.plain).font(.title2.bold()).padding(.horizontal, 18).padding(.top, 12)
                 .accessibilityLabel("曲名")
             Text("歌詞から、声へ。").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 18).padding(.top, 5)
+            Text("原語：\(Syllabifier.displayName(for: song.metadata.sourceLanguage))")
+                .font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                .padding(.horizontal, 18).padding(.top, 8)
             List(selection: Binding(get: { phrase?.id }, set: { id in
                 if let id, let selected = song.phrase(id) { session.select(selected) }
             })) {
@@ -248,6 +251,10 @@ struct WorkspaceView: View {
                     SwiftUI.Section(section.title) {
                         ForEach(section.phraseIDs.compactMap { song.phrase($0) }) { phrase in
                             VStack(alignment: .leading, spacing: 6) {
+                                if song.language(of: phrase) != song.metadata.sourceLanguage {
+                                    Text(Syllabifier.displayName(for: song.language(of: phrase)))
+                                        .font(.caption2.weight(.semibold)).foregroundStyle(.teal)
+                                }
                                 Text(phrase.originalText).font(.system(size: 13, weight: .medium)).lineLimit(2)
                                 Text(phrase.translation.value.isEmpty ? "訳を追加できます" : phrase.translation.value)
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -342,21 +349,30 @@ struct WorkspaceView: View {
                 Text("サンプル曲").font(.title2.bold())
                 Text("歌詞・読みを確認できます。音符の有無はサンプルごとに異なります。")
                     .font(.callout).foregroundStyle(.secondary)
-                ForEach(SampleCatalog.entries) { entry in
-                    Button { selectedSampleID = entry.id } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(entry.title).font(.headline)
-                            Text(entry.subtitle).font(.caption).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                            .background(selectedSampleID == entry.id ? Color.teal.opacity(0.12) : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: 10))
-                    }.buttonStyle(.plain).accessibilityLabel("サンプル \(entry.title)")
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(SampleCatalog.entries) { entry in
+                            Button { selectedSampleID = entry.id } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(entry.title).font(.headline)
+                                    HStack(spacing: 7) {
+                                        Text(entry.languageName)
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.teal)
+                                        Text(entry.subtitle).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                    .background(selectedSampleID == entry.id ? Color.teal.opacity(0.12) : Color.clear,
+                                                in: RoundedRectangle(cornerRadius: 10))
+                            }.buttonStyle(.plain).accessibilityLabel("サンプル \(entry.languageName) \(entry.title)")
+                        }
+                    }
                 }
-                Spacer(minLength: 0)
             }.padding(24).frame(width: 285)
             Divider()
             VStack(alignment: .leading, spacing: 14) {
                 Text(selected.title).font(.system(size: 29, weight: .semibold, design: .serif))
+                Text("原語：\(selected.languageName)").font(.caption.weight(.semibold)).foregroundStyle(.teal)
                 Text(selected.details).foregroundStyle(.secondary)
                 Divider()
                 Text("歌詞のプレビュー").font(.caption.weight(.semibold)).foregroundStyle(.teal)
