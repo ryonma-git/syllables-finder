@@ -9,8 +9,12 @@ struct SongPrintTool {
         let arguments = CommandLine.arguments
         let options = Array(arguments.dropFirst(3))
         guard arguments.count >= 3,
-              options.allSatisfy({ $0 == "--stage-german" || $0 == "--meaning-below" || $0.hasPrefix("--order=") }),
-              options.filter({ $0.hasPrefix("--order=") }).count <= 1 else {
+              options.allSatisfy({ $0 == "--stage-german" || $0 == "--meaning-below" ||
+                  $0.hasPrefix("--order=") || $0.hasPrefix("--design=") ||
+                  $0.hasPrefix("--accent=") || $0.hasPrefix("--vowel=") }),
+              ["--order=", "--design=", "--accent=", "--vowel="].allSatisfy({ prefix in
+                  options.filter { $0.hasPrefix(prefix) }.count <= 1
+              }) else {
             throw PrintError.creationFailed
         }
         var song: SongDocument
@@ -36,7 +40,26 @@ struct SongPrintTool {
             }
             order = parsed
         } else { order = options.contains("--meaning-below") ? .meaningBelow : .baseline }
-        let sheet = PrintSheet(song: song, order: order)
+        var appearance = PrintAppearance()
+        if let value = options.first(where: { $0.hasPrefix("--design=") }) {
+            guard let design = PrintDesign(rawValue: String(value.dropFirst("--design=".count))) else {
+                throw PrintError.creationFailed
+            }
+            appearance.design = design
+        }
+        if let value = options.first(where: { $0.hasPrefix("--accent=") }) {
+            guard let color = PrintRGBColor(hex: String(value.dropFirst("--accent=".count))) else {
+                throw PrintError.creationFailed
+            }
+            appearance.accent = color
+        }
+        if let value = options.first(where: { $0.hasPrefix("--vowel=") }) {
+            guard let color = PrintRGBColor(hex: String(value.dropFirst("--vowel=".count))) else {
+                throw PrintError.creationFailed
+            }
+            appearance.vowelNucleus = color
+        }
+        let sheet = PrintSheet(song: song, order: order, appearance: appearance)
         let data: Data
         switch output.pathExtension.lowercased() {
         case "pdf": data = try PDFSheet.render(sheet)

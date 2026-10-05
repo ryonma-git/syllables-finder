@@ -33,11 +33,12 @@ public enum SampleCatalog {
               details: "隣り合う音の上下と、長い語尾を練習します。", factory: makeMary),
         .init(id: "frere", title: "Frère Jacques", languageCode: "fr", subtitle: "8小節 · 32音節",
               details: "繰り返しの旋律で、読みとIPAを見比べます。", factory: makeFrereJacques),
-        .init(id: "ninth", title: "第九・歓喜の歌（歌詞）", languageCode: "de", subtitle: "第1節4行 · 歌詞のみ",
-              details: "写真にある『歓喜の歌』第1節。原語・意味・音節・IPA・カタカナを読むためのサンプルです。音符は未入力です。", factory: makeNinth),
+        .init(id: "ninth", title: "第九・歓喜の歌", languageCode: "de", subtitle: "第1節4行 · 旋律付き",
+              details: "シラーの第1節と、ベートーヴェンの旋律を収録。歌詞と音符の対応は未校訂です。",
+              factory: { SourceMelodies.attaching("ninth", to: makeNinth()) }),
         .init(id: "morning", title: "Morning light", languageCode: "en", subtitle: "オリジナル · 2小節",
               details: "短い操作練習用のサンプルです。", factory: SampleSongDocument.make)
-    ] + TraditionalSamples.entries
+    ] + TraditionalSamples.entries + WellKnownSamples.entries
 
     struct SyllableSpec {
         let text: String
@@ -141,8 +142,8 @@ public enum SampleCatalog {
         func w(_ surface: String, _ meaning: String, _ sounds: [(String, String, String)]) -> WordSpec {
             .init(surface, meaning, sounds.map { .init($0.0, $0.1, $0.2) })
         }
-        return makeSong(title: "第九・歓喜の歌（歌詞）", language: "de",
-                        notes: "シラー『歓喜に寄す』の第1節（提示された写真の範囲）。歌詞レイアウト確認用。音符は未入力。",
+        return makeSong(title: "第九・歓喜の歌", language: "de",
+                        notes: "シラー『歓喜に寄す』の第1節。詞は提示された写真の範囲。",
                         bpm: 100, serialStart: 40_000, withMusic: false, lines: [
             .init(text: "Freude, schöner Götterfunken, Tochter aus Elysium!",
                   translation: "歓喜よ、美しい神々の火花よ、エリュシオンから来た娘よ！",

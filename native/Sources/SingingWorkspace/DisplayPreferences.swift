@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 import SongPrint
 
 @MainActor
 final class DisplayPreferences: ObservableObject {
     static let orderKey = "SingingWorkspace.readingOrder"
+    static let appearanceKey = "SingingWorkspace.printAppearance"
     private let defaults: UserDefaults
 
     @Published var readingOrder: ReadingOrder {
@@ -11,11 +13,20 @@ final class DisplayPreferences: ObservableObject {
             defaults.set(readingOrder.elements.map(\.rawValue), forKey: Self.orderKey)
         }
     }
+    @Published var printAppearance: PrintAppearance {
+        didSet {
+            if let data = try? JSONEncoder().encode(printAppearance) {
+                defaults.set(data, forKey: Self.appearanceKey)
+            }
+        }
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let saved = defaults.stringArray(forKey: Self.orderKey) ?? []
         readingOrder = ReadingOrder(saved.compactMap(ReadingElement.init(rawValue:))) ?? .baseline
+        printAppearance = defaults.data(forKey: Self.appearanceKey)
+            .flatMap { try? JSONDecoder().decode(PrintAppearance.self, from: $0) } ?? .init()
     }
 }
 
@@ -84,11 +95,43 @@ struct DisplaySettingsView: View {
                 Button("標準の並びに戻す") { preferences.readingOrder = .baseline }
             }
             Section("書き出し") {
-                Text("PDFとWordは、書き出しを始めた時点の表示順で作成します。")
+                Text("PDFとWordのデザインと色は、画面のアクセントカラーとは別に設定できます。")
                     .foregroundStyle(.secondary)
+                Picker("デザイン", selection: Binding(
+                    get: { preferences.printAppearance.design },
+                    set: { preferences.printAppearance.design = $0 }
+                )) {
+                    ForEach(PrintDesign.allCases, id: \.self) { design in
+                        Text(design.label).tag(design)
+                    }
+                }
+                ColorPicker("見出し・番号のアクセントカラー", selection: colorBinding(for: \.accent),
+                            supportsOpacity: false)
+                ColorPicker("母音核の色", selection: colorBinding(for: \.vowelNucleus),
+                            supportsOpacity: false)
+                Button("書き出しのデザインと色を標準に戻す") {
+                    preferences.printAppearance = .init()
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 410)
+        .frame(width: 500, height: 590)
+    }
+
+    private func colorBinding(for keyPath: WritableKeyPath<PrintAppearance, PrintRGBColor>) -> Binding<Color> {
+        Binding(
+            get: {
+                let value = preferences.printAppearance[keyPath: keyPath]
+                return Color(red: Double(value.red) / 255, green: Double(value.green) / 255,
+                             blue: Double(value.blue) / 255)
+            },
+            set: { color in
+                guard let rgb = NSColor(color).usingColorSpace(.deviceRGB) else { return }
+                let component: (CGFloat) -> UInt8 = { UInt8((max(0, min(1, $0)) * 255).rounded()) }
+                preferences.printAppearance[keyPath: keyPath] = .init(
+                    red: component(rgb.redComponent), green: component(rgb.greenComponent),
+                    blue: component(rgb.blueComponent))
+            }
+        )
     }
 }

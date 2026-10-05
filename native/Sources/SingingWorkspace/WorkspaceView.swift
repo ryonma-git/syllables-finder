@@ -519,6 +519,7 @@ struct WorkspaceView: View {
     private func exportSheet(_ format: SheetFormat) {
         let snapshot = song
         let readingOrder = displayPreferences.readingOrder
+        let printAppearance = displayPreferences.printAppearance
         let panel = NSSavePanel()
         panel.allowedContentTypes = [format.type]
         panel.canCreateDirectories = true
@@ -526,12 +527,13 @@ struct WorkspaceView: View {
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title).\(format.fileExtension)"
-        panel.message = "表示順：\(readingOrder.legend)。画面で選んだ発音・カタカナ読みで書き出します。"
+        panel.message = "\(printAppearance.design.label)・表示順：\(readingOrder.legend)。画面で選んだ発音・カタカナ読みで書き出します。"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in
                 do {
-                    let sheet = PrintSheet(song: snapshot, order: readingOrder)
+                    let sheet = PrintSheet(song: snapshot, order: readingOrder,
+                                           appearance: printAppearance)
                     let data = try format == .pdf ? PDFSheet.render(sheet) : WordSheet.render(sheet)
                     try data.write(to: url, options: .atomic)
                 } catch {

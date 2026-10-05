@@ -146,10 +146,13 @@ public struct PrintSheet: Sendable {
     public let title: String
     public let phrases: [PrintPhrase]
     public let order: ReadingOrder
+    public let appearance: PrintAppearance
     public let pronunciationLabel: String?
 
-    public init(song: SongDocument, order: ReadingOrder = .baseline) {
+    public init(song: SongDocument, order: ReadingOrder = .baseline,
+                appearance: PrintAppearance = .init()) {
         self.order = order
+        self.appearance = appearance
         pronunciationLabel = NinthPronunciation.isAvailable(in: song)
             ? (song.metadata.ninthPronunciation ?? .standard).label : nil
         title = song.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

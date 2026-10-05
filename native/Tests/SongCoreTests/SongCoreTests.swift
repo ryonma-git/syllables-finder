@@ -30,10 +30,12 @@ struct SongCoreTests {
         }
     }
 
-    @Test func sampleCatalogSongsHaveCompleteSyllableNoteAlignment() throws {
+    @Test func sampleCatalogKeepsLanguagesAndHasTraceableMelodies() throws {
         #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "ninth", "morning",
                                                    "entchen", "pollitos", "martino", "adeste", "birch",
-                                                   "sakura", "arirang", "jasmine"])
+                                                   "sakura", "arirang", "jasmine", "mountain", "cuckoo",
+                                                   "clarinet", "marseillaise", "gloria", "kalinka",
+                                                   "korobeiniki", "week", "danny", "auld"])
         #expect(Set(SampleCatalog.entries.map(\.languageCode)) == Set(Syllabifier.languages.map(\.id)))
         for entry in SampleCatalog.entries {
             let song = entry.make()
@@ -41,10 +43,17 @@ struct SongCoreTests {
             #expect(song == entry.make())
             #expect(!song.phrases.isEmpty)
             #expect(song.metadata.sourceLanguage == entry.languageCode)
-            if entry.id != "morning" {
+            if ["twinkle", "mary", "frere", "ninth", "entchen", "pollitos", "martino", "adeste",
+                "birch", "sakura", "arirang", "jasmine"].contains(entry.id) {
                 #expect(song.syllables.allSatisfy { !$0.reading.value.isEmpty && !$0.ipa.value.isEmpty })
             }
-            if !song.music.events.isEmpty && entry.id != "morning" {
+            #expect(!song.music.events.isEmpty)
+            if SourceMelodies.scores[entry.id] != nil {
+                #expect(song.metadata.notes.contains("旋律資料:"))
+                #expect(song.metadata.notes.contains("未校訂"))
+                #expect(song.alignments.isEmpty)
+                #expect(try SampleMIDI.encode(song).starts(with: Data("MThd".utf8)))
+            } else if entry.id != "morning" {
                 #expect(song.syllables.count == song.music.events.compactMap(\.note).count)
                 #expect(song.syllables.allSatisfy { syllable in
                     song.alignments.contains { $0.languageTargets.contains(.init(.syllable, syllable.id)) }
@@ -53,10 +62,10 @@ struct SongCoreTests {
         }
     }
 
-    @Test func traditionalSamplesAreAnnotatedWithoutInventedMusic() throws {
+    @Test func traditionalSamplesKeepTheirAnnotationsWithScoreMelodies() throws {
         for entry in TraditionalSamples.entries {
             let song = entry.make()
-            #expect(song.music.events.isEmpty && song.alignments.isEmpty)
+            #expect(!song.music.events.isEmpty && song.alignments.isEmpty)
             #expect(song.words.allSatisfy { !$0.contextualMeaning.value.isEmpty })
             #expect(song.phrases.allSatisfy { !$0.translation.value.isEmpty })
             #expect(song.phrases.allSatisfy { !$0.originalText.isEmpty })
@@ -64,11 +73,11 @@ struct SongCoreTests {
         }
     }
 
-    @Test func ninthSampleHasFourAnnotatedLinesWithoutInventedNotes() throws {
+    @Test func ninthSampleHasFourAnnotatedLinesAndScoreMelody() throws {
         let song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
         try song.validate()
         #expect(song.phrases.count == 4)
-        #expect(song.music.events.isEmpty)
+        #expect(!song.music.events.isEmpty)
         #expect(song.alignments.isEmpty)
         #expect(song.phrases[0].originalText == "Freude, schöner Götterfunken, Tochter aus Elysium!")
         #expect(song.words.count == 30)

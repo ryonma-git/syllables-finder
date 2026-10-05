@@ -25,13 +25,14 @@ do {
         song = twinkle ? TwinkleSample.make() : SampleSongDocument.make()
     }
     let json = try song.encoded()
-    let midi = twinkle || (namedSample && arguments[2] == "twinkle") ? try SampleMIDI.encode(song) : nil
+    let midi = song.music.events.contains(where: { $0.note != nil }) ? try SampleMIDI.encode(song) : nil
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
     try json.write(to: url.appendingPathComponent("document.json"), options: .atomic)
     if let midi {
         let source = url.appendingPathComponent("source", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: false)
-        try midi.write(to: source.appendingPathComponent("Twinkle.mid"), options: .atomic)
+        let name = twinkle || (namedSample && arguments[2] == "twinkle") ? "Twinkle.mid" : "Melody.mid"
+        try midi.write(to: source.appendingPathComponent(name), options: .atomic)
     }
     print(url.path)
 } catch {

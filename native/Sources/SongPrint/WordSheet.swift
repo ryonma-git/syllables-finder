@@ -10,7 +10,7 @@ public enum WordSheet {
             "[Content_Types].xml": contentTypes,
             "_rels/.rels": rootRelationships,
             "word/document.xml": document(sheet),
-            "word/styles.xml": styles,
+            "word/styles.xml": styles(for: sheet.appearance),
             "word/_rels/document.xml.rels": documentRelationships,
             "word/header1.xml": header,
             "word/footer1.xml": footer,
@@ -37,7 +37,7 @@ public enum WordSheet {
     private static func document(_ sheet: PrintSheet) -> String {
         var body = paragraph(sheet.title, style: "Title")
         body += paragraph(sheet.order.legend + (sheet.pronunciationLabel.map { "　｜" + $0 } ?? "")
-                          + "。青緑は母音核、· は音節の区切りです。", style: "Translation")
+                          + "。色付き文字は母音核、· は音節の区切りです。", style: "Translation")
         if sheet.phrases.isEmpty { body += paragraph("歌詞はまだありません。", style: "Translation") }
         var lastSection = ""
         for phrase in sheet.phrases {
@@ -45,12 +45,12 @@ public enum WordSheet {
                 body += paragraph(phrase.section, style: "Section")
                 lastSection = phrase.section
             }
-            body += wordBlock(phrase, elements: sheet.order.beforeTranslation)
+            body += wordBlock(phrase, elements: sheet.order.beforeTranslation, appearance: sheet.appearance)
             if !phrase.translation.isEmpty {
                 body += paragraph("文の意味　" + phrase.translation, style: "Translation",
                                   keepNext: !sheet.order.afterTranslation.isEmpty)
             }
-            body += wordBlock(phrase, elements: sheet.order.afterTranslation)
+            body += wordBlock(phrase, elements: sheet.order.afterTranslation, appearance: sheet.appearance)
         }
         return """
         <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -60,7 +60,8 @@ public enum WordSheet {
         """
     }
 
-    private static func wordBlock(_ phrase: PrintPhrase, elements: [ReadingElement]) -> String {
+    private static func wordBlock(_ phrase: PrintPhrase, elements: [ReadingElement],
+                                  appearance: PrintAppearance) -> String {
         guard !elements.isEmpty else { return "" }
         var result = ""
         if elements.first == .original || (phrase.words.isEmpty && elements.contains(.original)) {
@@ -70,7 +71,8 @@ public enum WordSheet {
             if index > 0 {
                 result += paragraph("続き｜" + phrase.original, style: "Continuation", keepNext: true)
             }
-            result += interlinearRow(row.words, widths: row.widths, elements: elements)
+            result += interlinearRow(row.words, widths: row.widths, elements: elements,
+                                     appearance: appearance)
             // Word merges consecutive tables with different grids unless a paragraph separates them.
             result += paragraph("", style: "RowGap")
         }
@@ -96,10 +98,11 @@ public enum WordSheet {
         return rows
     }
 
-    private static func interlinearRow(_ words: [PrintWord], widths: [Int], elements: [ReadingElement]) -> String {
+    private static func interlinearRow(_ words: [PrintWord], widths: [Int], elements: [ReadingElement],
+                                       appearance: PrintAppearance) -> String {
         let grid = widths.map { "<w:gridCol w:w=\"\($0)\"/>" }.joined()
         let cells = zip(words, widths).map { word, width in
-            let lyric = syllableParagraph(word)
+            let lyric = syllableParagraph(word, appearance: appearance)
             let meaning = paragraph(word.meaning.isEmpty ? "意味未設定" : word.meaning, style: "Gloss")
             let ipa = paragraph(word.ipa.isEmpty ? "IPA未設定" : word.ipa, style: "Annotation")
             let reading = paragraph(word.reading.isEmpty ? "カタカナ未設定" : word.reading, style: "Annotation")
@@ -126,9 +129,9 @@ public enum WordSheet {
         """
     }
 
-    private static func syllableParagraph(_ word: PrintWord) -> String {
+    private static func syllableParagraph(_ word: PrintWord, appearance: PrintAppearance) -> String {
         let runs = word.displayFragments.map { segment in
-            "<w:r><w:rPr><w:b/><w:color w:val=\"\(segment.isVowelNucleus ? "0A9CA6" : "242424")\"/></w:rPr><w:t xml:space=\"preserve\">\(escape(segment.text))</w:t></w:r>"
+            "<w:r><w:rPr><w:b/><w:color w:val=\"\(segment.isVowelNucleus ? appearance.vowelNucleus.hex : "242424")\"/></w:rPr><w:t xml:space=\"preserve\">\(escape(segment.text))</w:t></w:r>"
         }.joined()
         return "<w:p><w:pPr><w:pStyle w:val=\"Lyric\"/></w:pPr>\(runs)</w:p>"
     }
@@ -199,7 +202,37 @@ public enum WordSheet {
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Singing Workspace</Application></Properties>
     """
-    private static let styles = """
+    private static func styles(for appearance: PrintAppearance) -> String {
+        var xml = baseStyles.replacingOccurrences(of: "0A9CA6", with: appearance.accent.hex)
+        switch appearance.design {
+        case .standard: break
+        case .compact:
+            for (old, new) in [("w:after=\"100\"", "w:after=\"55\""),
+                               ("w:after=\"180\"", "w:after=\"110\""),
+                               ("w:before=\"120\"", "w:before=\"75\""),
+                               ("w:after=\"60\"", "w:after=\"35\""),
+                               ("w:sz w:val=\"36\"", "w:sz w:val=\"32\""),
+                               ("w:sz w:val=\"27\"", "w:sz w:val=\"24\""),
+                               ("w:sz w:val=\"23\"", "w:sz w:val=\"20\""),
+                               ("w:sz w:val=\"16\"", "w:sz w:val=\"14\"") ] {
+                xml = xml.replacingOccurrences(of: old, with: new)
+            }
+        case .largePrint:
+            for (old, new) in [("w:after=\"100\"", "w:after=\"145\""),
+                               ("w:after=\"180\"", "w:after=\"225\""),
+                               ("w:before=\"120\"", "w:before=\"165\""),
+                               ("w:after=\"60\"", "w:after=\"85\""),
+                               ("w:sz w:val=\"36\"", "w:sz w:val=\"42\""),
+                               ("w:sz w:val=\"27\"", "w:sz w:val=\"32\""),
+                               ("w:sz w:val=\"23\"", "w:sz w:val=\"28\""),
+                               ("w:sz w:val=\"16\"", "w:sz w:val=\"20\"") ] {
+                xml = xml.replacingOccurrences(of: old, with: new)
+            }
+        }
+        return xml
+    }
+
+    private static let baseStyles = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
       <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Hiragino Sans" w:hAnsi="Hiragino Sans" w:eastAsia="Hiragino Sans"/><w:lang w:eastAsia="ja-JP"/><w:sz w:val="20"/><w:color w:val="242424"/></w:rPr></w:rPrDefault></w:docDefaults>
