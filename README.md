@@ -235,6 +235,8 @@ index の数え方（`journey` の例）:
 
 ## 新しい歌唱発音ワークスペース（開発中）
 
+別途用意した歌詞から `.songproj` を作るコマンドとローカルJSON APIは[歌詞から曲ファイルを作るローカルAPI](docs/SONG_GENERATION_API.md)に記載しています。
+
 SwiftUIで作る新アプリの基盤は [`native/`](native/) にあります。現行の母音核教材アプリは上記の方法で引き続き起動できます。新アプリの設計正本は [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) から始まる8文書、進捗と検証結果は [`docs/WORK_LOG.md`](docs/WORK_LOG.md) です。
 
 macOSの開発用実行は `native/新アプリを起動.command` をダブルクリックします。Command Line ToolsとSwift 6が必要です。シェルからは `native/scripts/build-app.sh`、`native/scripts/swift-tool.sh test` を使います。新規文書の「サンプルを表示」から、10言語の伝承歌・童謡など13曲を選べます。言語名は一覧と歌詞画面に表示します。新しい8曲は[資料と収録範囲](docs/TRADITIONAL_SAMPLES.md)を記録した歌詞のみの読解サンプルです。自分の歌詞も追加できます。`.songproj`を保存すると言語と音楽の編集内容が残ります。開発用のサンプル文書が必要なら `native/scripts/swift-tool.sh build` の後に、ビルドされた `SongSampleTool /tmp/Practice.songproj`、`SongSampleTool --twinkle /tmp/Twinkle.songproj`、または `SongSampleTool --sample sakura /tmp/Sakura.songproj` で生成できます。きらきら星には `source/Twinkle.mid` を同梱します。既存ファイルは上書きしません。

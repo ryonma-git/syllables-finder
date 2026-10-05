@@ -3,6 +3,33 @@ import Testing
 @testable import SongCore
 
 struct SongCoreTests {
+    @Test func generatedSongKeepsStanzasAndOpensAsAValidDocument() throws {
+        let request = SongGenerationRequest(title: "Practice", sourceLanguage: "en",
+                                            lyrics: "One short line\r\nAnother line\r\n\r\nFinal line\r\n",
+                                            sourceNote: "Provided by the user",
+                                            sectionTitles: ["Verse", "Refrain"])
+        let song = try request.makeDocument()
+        #expect(song.sections.map(\.phraseIDs.count) == [2, 1])
+        #expect(song.sections.map(\.title) == ["Verse", "Refrain"])
+        #expect(song.phrases.map(\.originalText) == ["One short line", "Another line", "Final line"])
+        #expect(song.words.count == 7)
+        #expect(song.music.events.isEmpty && song.alignments.isEmpty)
+        #expect(song.metadata.notes.contains("Provided by the user"))
+        #expect(try SongDocument.decode(song.encoded()) == song)
+    }
+
+    @Test func generatedSongRejectsEmptyOrOversizedInput() {
+        #expect(throws: (any Error).self) {
+            try SongGenerationRequest(title: "Empty", sourceLanguage: "en", lyrics: " \n ").makeDocument()
+        }
+        #expect(throws: (any Error).self) {
+            try SongGenerationRequest(title: "Long", sourceLanguage: "en", lyrics: String(repeating: "a", count: 1_001)).makeDocument()
+        }
+        #expect(throws: (any Error).self) {
+            try SongGenerationRequest(title: "Short", sourceLanguage: "en", lyrics: "One line", sectionTitles: ["A", "B"]).makeDocument()
+        }
+    }
+
     @Test func sampleCatalogSongsHaveCompleteSyllableNoteAlignment() throws {
         #expect(SampleCatalog.entries.map(\.id) == ["twinkle", "mary", "frere", "ninth", "morning",
                                                    "entchen", "pollitos", "martino", "adeste", "birch",

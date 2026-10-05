@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "SongNotation", targets: ["SongNotation"]),
         .executable(name: "SongStaffTool", targets: ["SongStaffTool"]),
         .executable(name: "SongSampleTool", targets: ["SongSampleTool"]),
+        .executable(name: "SongGenerateTool", targets: ["SongGenerateTool"]),
         .executable(name: "SongPrintTool", targets: ["SongPrintTool"]),
         .executable(name: "SingingWorkspace", targets: ["SingingWorkspace"])
     ],
@@ -21,6 +22,7 @@ let package = Package(
         .target(name: "SongNotation", dependencies: ["SongCore"]),
         .executableTarget(name: "SongStaffTool", dependencies: ["SongCore", "SongNotation"]),
         .executableTarget(name: "SongSampleTool", dependencies: ["SongCore"]),
+        .executableTarget(name: "SongGenerateTool", dependencies: ["SongCore", "SongServices"]),
         .executableTarget(name: "SongPrintTool", dependencies: ["SongCore", "SongPrint"]),
         .executableTarget(name: "SingingWorkspace", dependencies: ["SongCore", "SongServices", "SongPrint", "SongNotation"]),
         .testTarget(name: "SongCoreTests", dependencies: ["SongCore"]),
