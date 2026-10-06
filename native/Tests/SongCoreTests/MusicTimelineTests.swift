@@ -60,6 +60,21 @@ struct MusicTimelineTests {
         #expect(samples[boundary..<(boundary + 2_000)].contains { abs($0) > 0.01 })
     }
 
+    @Test func longPlaybackPlanAndChunksPreserveAbsoluteWaveform() throws {
+        var song = SongDocument()
+        song.music.events = [
+            .init(onset: try beat(300), duration: try beat(3), content: .note(.init(pitch: 69)))
+        ]
+        let plan = try PlaybackPlan(song: song, range: .init(start: .zero, end: beat(360)), practiceBPM: 60)
+        #expect(abs(plan.duration - 360) < 0.000_001)
+        let start = Int(301 * GuidePCMRenderer.sampleRate) - 100
+        let chunk = try GuidePCMRenderer.render(plan, startingAt: start, frameCount: 300)
+        let left = try GuidePCMRenderer.render(plan, startingAt: start, frameCount: 100)
+        let right = try GuidePCMRenderer.render(plan, startingAt: start + 100, frameCount: 200)
+        #expect(chunk == left + right)
+        #expect(chunk.contains { abs($0) > 0.01 })
+    }
+
     @Test func sampleReadingsAndNotationSurviveRoundTrip() throws {
         let song = TwinkleSample.make()
         #expect(song.syllables.count == 42)

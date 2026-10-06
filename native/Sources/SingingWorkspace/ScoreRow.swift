@@ -11,6 +11,7 @@ struct ScoreRow: View {
     @ObservedObject var session: WorkspaceSession
     let onMeasureTap: (MeasureSlice) -> Void
     let seek: (Double) -> Void
+    @State private var layout: Layout?
 
     static let lyricFont = "HiraginoSans-W3"
     static func space(scale: Double) -> Double { min(15, max(9.5, scale * 0.2)) }
@@ -46,6 +47,11 @@ struct ScoreRow: View {
         let lyricTop: Double
     }
 
+    private struct Layout {
+        let blocks: [Block]
+        let height: Double
+    }
+
     private func blocks() -> ([Block], Double) {
         var blocks: [Block] = []
         var y = 62.0
@@ -73,7 +79,19 @@ struct ScoreRow: View {
     }
 
     var body: some View {
-        let (blocks, height) = blocks()
+        Group {
+            if let layout {
+                content(blocks: layout.blocks, height: layout.height)
+            } else {
+                ProgressView().frame(width: width, height: 90).task {
+                    let (blocks, height) = blocks()
+                    layout = Layout(blocks: blocks, height: height)
+                }
+            }
+        }
+    }
+
+    private func content(blocks: [Block], height: Double) -> some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor))
             highlights(blocks)

@@ -29,7 +29,7 @@ final class WorkspaceSession: ObservableObject {
     @Published var showNotes = false
     @Published var guideState = GuideState.stopped
     @Published var singingLayout = SingingLayout.overview
-    @Published var pitchDisplay = PitchDisplay.pianoRoll
+    @Published var pitchDisplay = PitchDisplay.staff
     @Published var playbackScope = PlaybackScope.whole
     @Published var practiceRange: BeatRange?
     @Published var practiceCandidate: BeatRange?
@@ -178,6 +178,10 @@ struct WorkspaceView: View {
                 playTask?.cancel(); playTask = nil
                 session.guideState = .stopped
             }
+            session.guide.onError = { error in
+                session.guideState = .failed
+                session.error = "ガイド音を再生できませんでした: \(error.localizedDescription)"
+            }
         }
         .onChange(of: session.bpm) { _, _ in
             guard !changingTempo else { return }
@@ -193,7 +197,7 @@ struct WorkspaceView: View {
         .task(id: session.guideState) {
             guard session.guideState == .playing else { return }
             while !Task.isCancelled && session.guideState == .playing {
-                do { try await Task.sleep(for: .milliseconds(33)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                 if let position = session.guide.position { session.position = position }
             }
         }

@@ -10,9 +10,12 @@ final class GuideTonePlayer {
     private let player = AVAudioPlayerNode()
     private let auditionNode = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: GuidePCMRenderer.sampleRate, channels: 1)!
+    private let chunkFrames = Int(8 * GuidePCMRenderer.sampleRate)
     private var generation: UInt64 = 0
     private var renderTask: Task<[Float], Error>?
     private var plan: PlaybackPlan?
+    private var nextFrame = 0
+    private var totalFrames = 0
     private var startingElapsed = 0.0
     private var pausedPosition: Double?
     private var loop = false
@@ -21,6 +24,7 @@ final class GuideTonePlayer {
     var onFinished: (@MainActor () -> Void)?
     /// Called when the output device configuration changed and playback was cancelled.
     var onInterrupted: (@MainActor () -> Void)?
+    var onError: (@MainActor (Error) -> Void)?
 
     init() {
         engine.attach(player)
@@ -48,7 +52,7 @@ final class GuideTonePlayer {
         generation &+= 1
         renderTask?.cancel(); renderTask = nil
         player.stop(); auditionNode.stop()
-        plan = nil; pausedPosition = nil; state = .stopped
+        plan = nil; nextFrame = 0; totalFrames = 0; pausedPosition = nil; state = .stopped
     }
 
     func pause() {
@@ -82,32 +86,22 @@ final class GuideTonePlayer {
         state = .preparing
         do {
             let plan = try PlaybackPlan(song: song, range: range, practiceBPM: bpm)
-            let task = Task.detached(priority: .userInitiated) { try GuidePCMRenderer.render(plan) }
-            renderTask = task
-            let samples = try await task.value
-            guard generation == token else { throw CancellationError() }
-            renderTask = nil
+            let frames = ceil(plan.duration * GuidePCMRenderer.sampleRate)
+            guard frames.isFinite, frames > 0, frames < Double(Int.max) else {
+                throw SongError.invalid("再生範囲の長さが正しくありません。")
+            }
             let rangeStartSeconds = plan.tempo.seconds(at: range.start.doubleValue)
             let offset = min(plan.duration, max(0, plan.tempo.seconds(at: fromBeat) - rangeStartSeconds))
-            let firstFrame = min(samples.count - 1, Int(floor(offset * GuidePCMRenderer.sampleRate)))
-            let first = try makeBuffer(Array(samples[firstFrame...]))
+            let firstFrame = min(Int(frames) - 1, Int(floor(offset * GuidePCMRenderer.sampleRate)))
             if !engine.isRunning { try engine.start() }
             self.plan = plan; self.loop = loop
+            self.totalFrames = Int(frames); self.nextFrame = firstFrame
             self.startingElapsed = Double(firstFrame) / GuidePCMRenderer.sampleRate
-            if loop {
-                // Resume the remainder once, then loop the entire range.
-                if firstFrame > 0 { player.scheduleBuffer(first, at: nil, options: [], completionHandler: nil) }
-                let whole = firstFrame > 0 ? try makeBuffer(samples) : first
-                player.scheduleBuffer(whole, at: nil, options: .loops, completionHandler: nil)
-            } else {
-                player.scheduleBuffer(first, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.generation == token else { return }
-                        self.state = .stopped
-                        self.onFinished?()
-                    }
-                }
-            }
+            // Keep two short buffers queued. The completion of each consumed buffer
+            // prepares the next one, so a long song never occupies one giant buffer.
+            try await scheduleNextChunk(token: token)
+            try await scheduleNextChunk(token: token)
+            guard generation == token else { throw CancellationError() }
             player.play()
             state = .playing
         } catch {
@@ -115,6 +109,47 @@ final class GuideTonePlayer {
                 renderTask = nil; player.stop(); state = .failed
             }
             throw error
+        }
+    }
+
+    private func scheduleNextChunk(token: UInt64) async throws {
+        guard generation == token, let plan else { throw CancellationError() }
+        if nextFrame >= totalFrames {
+            guard loop else { return }
+            nextFrame = 0
+        }
+        let start = nextFrame
+        let count = min(chunkFrames, totalFrames - start)
+        nextFrame += count
+        let task = Task.detached(priority: .userInitiated) {
+            try GuidePCMRenderer.render(plan, startingAt: start, frameCount: count)
+        }
+        renderTask = task
+        let samples = try await task.value
+        guard generation == token else { throw CancellationError() }
+        renderTask = nil
+        let buffer = try makeBuffer(samples)
+        if !loop && start + count == totalFrames {
+            player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token else { return }
+                    self.state = .stopped
+                    self.onFinished?()
+                }
+            }
+        } else {
+            player.scheduleBuffer(buffer, completionCallbackType: .dataConsumed) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token else { return }
+                    do { try await self.scheduleNextChunk(token: token) }
+                    catch {
+                        guard self.generation == token else { return }
+                        self.stop()
+                        self.state = .failed
+                        self.onError?(error)
+                    }
+                }
+            }
         }
     }
 

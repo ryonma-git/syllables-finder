@@ -138,7 +138,7 @@ public struct PlaybackPlan: Sendable {
         let tempo = try TempoMap(tempos: song.music.tempos, multiplier: practiceBPM / originalBPM)
         let rangeStartSeconds = tempo.seconds(at: range.start.doubleValue)
         let total = tempo.seconds(at: range.end.doubleValue) - rangeStartSeconds
-        guard total > 0, total <= 300 else { throw SongError.invalid("再生は5分までです。短い小節範囲を選んでください。") }
+        guard total.isFinite, total > 0 else { throw SongError.invalid("再生範囲の長さが正しくありません。") }
 
         var grouped: [MusicalEvent] = []
         var diagnostics: [String] = []

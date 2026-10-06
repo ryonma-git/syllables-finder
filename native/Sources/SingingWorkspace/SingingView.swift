@@ -15,6 +15,9 @@ struct SingingView: View {
     var body: some View {
         GeometryReader { geometry in
             let slices = projection.slices
+            let pitches = song.music.events.compactMap { $0.note?.pitch }
+            let lowPitch = max(0, (pitches.min() ?? 60) - 2)
+            let highPitch = min(127, (pitches.max() ?? 72) + 2)
             let columns = overviewColumns(slices: slices, availableWidth: geometry.size.width)
             let rows = session.singingLayout == .detail
                 ? projection.detailWindows
@@ -39,14 +42,20 @@ struct SingingView: View {
                                 ForEach(rows.indices, id: \.self) { index in
                                     if session.singingLayout == .overview || index == session.detailIndex {
                                         let scale = session.singingLayout == .detail ? 120 : Self.overviewScale
-                                        if session.pitchDisplay == .staff && ScoreRow.issue(song: song, measures: rows[index]) == nil {
-                                            ScoreRow(song: song, measures: rows[index], scale: scale,
-                                                     session: session, onMeasureTap: selectMeasure, seek: seek)
-                                                .id(index)
+                                        if session.pitchDisplay == .staff {
+                                            Group {
+                                                StaffOrTimelineRow(song: song, measures: rows[index], scale: scale,
+                                                                   session: session, onMeasureTap: selectMeasure, seek: seek,
+                                                                   low: lowPitch, high: highPitch)
+                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(session.singingLayout)-\(session.showReading)-\(session.showIPA)-\(session.textScale)-\(session.partID)")
+                                            }.id(index)
                                         } else {
-                                            SingingTimelineRow(song: song, measures: rows[index], scale: scale,
-                                                               session: session, onMeasureTap: selectMeasure, seek: seek)
-                                                .id(index)
+                                            Group {
+                                                SingingTimelineRow(song: song, measures: rows[index], scale: scale,
+                                                                   session: session, onMeasureTap: selectMeasure, seek: seek,
+                                                                   staffIssue: nil, low: lowPitch, high: highPitch)
+                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(session.singingLayout)-\(session.partID)")
+                                            }.id(index)
                                         }
                                     }
                                 }
@@ -195,6 +204,32 @@ private struct ManualScrollTracking: ViewModifier {
     }
 }
 
+/// The notation feasibility check is tied to the document revision, not to every playhead tick.
+private struct StaffOrTimelineRow: View {
+    let song: SongDocument
+    let measures: [MeasureSlice]
+    let scale: Double
+    @ObservedObject var session: WorkspaceSession
+    let onMeasureTap: (MeasureSlice) -> Void
+    let seek: (Double) -> Void
+    let low: Int
+    let high: Int
+    @State private var issue: String?
+
+    var body: some View {
+        if issue == nil {
+            ProgressView().frame(height: 90).task { issue = ScoreRow.issue(song: song, measures: measures) ?? "" }
+        } else if let issue, !issue.isEmpty {
+            SingingTimelineRow(song: song, measures: measures, scale: scale,
+                               session: session, onMeasureTap: onMeasureTap, seek: seek,
+                               staffIssue: issue, low: low, high: high)
+        } else {
+            ScoreRow(song: song, measures: measures, scale: scale,
+                     session: session, onMeasureTap: onMeasureTap, seek: seek)
+        }
+    }
+}
+
 private struct SingingTimelineRow: View {
     let song: SongDocument
     let measures: [MeasureSlice]
@@ -202,6 +237,26 @@ private struct SingingTimelineRow: View {
     @ObservedObject var session: WorkspaceSession
     let onMeasureTap: (MeasureSlice) -> Void
     let seek: (Double) -> Void
+    let staffIssue: String?
+    let low: Int
+    let high: Int
+    @State private var wordSpans: [WordSpan]?
+    @State private var syllableSpans: [SyllableSpan]?
+
+    private struct WordSpan: Identifiable {
+        let word: Word
+        let first: Double
+        let last: Double
+        var id: UUID { word.id }
+    }
+
+    private struct SyllableSpan: Identifiable {
+        let syllable: Syllable
+        let index: Int
+        let from: Double
+        let to: Double
+        var id: String { "\(syllable.id)-\(index)" }
+    }
 
     private let left = 58.0
     private var pianoTop: Double { 180 + (session.showIPA ? 35 : 0) + max(0, session.textScale - 1) * 80 }
@@ -209,9 +264,6 @@ private struct SingingTimelineRow: View {
     private let keyHeight = 18.0
     private var start: Double { measures.first?.range.start.doubleValue ?? 0 }
     private var end: Double { measures.last?.range.end.doubleValue ?? start }
-    private var pitches: [Int] { song.music.events.compactMap { $0.note?.pitch } }
-    private var low: Int { max(0, (pitches.min() ?? 60) - 2) }
-    private var high: Int { min(127, (pitches.max() ?? 72) + 2) }
     private var pianoHeight: Double { Double(high - low + 1) * keyHeight }
     private var height: Double { pianoTop + max(pianoHeight, 165) + 47 }
     private var width: Double { left + (end - start) * scale + 16 }
@@ -247,7 +299,7 @@ private struct SingingTimelineRow: View {
             }
             lyrics
             pianoRoll
-            if session.pitchDisplay == .staff, let issue = ScoreRow.issue(song: song, measures: measures) {
+            if let issue = staffIssue {
                 Text("\(issue)").font(.caption).foregroundStyle(.orange).offset(x: left, y: height - 24)
             }
             if start <= session.position && session.position <= end {
@@ -281,11 +333,37 @@ private struct SingingTimelineRow: View {
     }
 
     private var lyrics: some View {
+        Group {
+            if let wordSpans, let syllableSpans {
+                lyricContent(words: wordSpans, syllables: syllableSpans)
+            } else {
+                Color.clear.task { prepareLyrics() }
+            }
+        }
+    }
+
+    private func prepareLyrics() {
+        let ranges = Dictionary(uniqueKeysWithValues: song.syllables.map { syllable in
+            (syllable.id, song.ranges(for: .init(.syllable, syllable.id), inPart: lyricPart).compactMap(clipped))
+        })
+        wordSpans = song.words.compactMap { word in
+            let segments = word.syllableIDs.flatMap { ranges[$0] ?? [] }
+            guard let first = segments.map(\.0).min(), let last = segments.map(\.1).max() else { return nil }
+            return WordSpan(word: word, first: first, last: last)
+        }
+        syllableSpans = song.syllables.flatMap { syllable in
+            (ranges[syllable.id] ?? []).enumerated().map { index, segment in
+                SyllableSpan(syllable: syllable, index: index, from: segment.0, to: segment.1)
+            }
+        }
+    }
+
+    private func lyricContent(words: [WordSpan], syllables: [SyllableSpan]) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach(song.words) { word in
-                let segments = song.syllables(in: word).flatMap { song.ranges(for: .init(.syllable, $0.id), inPart: lyricPart) }
-                    .compactMap(clipped)
-                if let first = segments.map(\.0).min(), let last = segments.map(\.1).max() {
+            ForEach(words) { span in
+                let word = span.word
+                let first = span.first
+                let last = span.last
                     Button {
                         session.wordID = word.id; session.syllableID = nil; session.showInspector = true
                         if let phrase = song.phrase(word.parentPhraseID) { session.phraseID = phrase.id }
@@ -296,11 +374,10 @@ private struct SingingTimelineRow: View {
                         }.lineLimit(1).frame(width: max(30, (last - first) * scale - 4), alignment: .leading)
                     }.buttonStyle(.plain).offset(x: x(first) + 3, y: 64)
                         .help("\(word.surface) · \(word.contextualMeaning.value)")
-                }
             }
-            ForEach(song.syllables) { syllable in
-                let segments = song.ranges(for: .init(.syllable, syllable.id), inPart: lyricPart).compactMap(clipped)
-                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+            ForEach(syllables) { span in
+                let syllable = span.syllable
+                let segment = (span.from, span.to)
                     Button {
                         session.syllableID = syllable.id; session.wordID = syllable.parentWordID
                         session.showInspector = true
@@ -318,7 +395,6 @@ private struct SingingTimelineRow: View {
                     }.buttonStyle(.plain).offset(x: x(segment.0) + 2, y: 109)
                         .accessibilityLabel("音節 \(syllable.text.value)、読み \(syllable.reading.value.isEmpty ? "未設定" : syllable.reading.value)")
                         .help("\(syllable.text.value) · \(syllable.reading.value.isEmpty ? "読み未設定" : syllable.reading.value) · \(syllable.ipa.value.isEmpty ? "IPA未設定" : "/\(syllable.ipa.value)/")")
-                }
             }
         }
     }
