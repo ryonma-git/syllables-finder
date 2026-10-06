@@ -43,6 +43,7 @@ struct ScoreRow: View {
     private struct Block {
         let staff: ScoreStaff
         let engraving: StaffEngraving
+        let notice: String?
         let lyrics: [LyricItem]
         let lyricTop: Double
     }
@@ -72,7 +73,8 @@ struct ScoreRow: View {
                                            noteEnd: { engraving.headRight[$0] },
                                            measure: { StaffPainter.textWidth($0, font: Self.lyricFont, size: size) })
             let lyricTop = staffTop + (4 + padding.below) * sp
-            blocks.append(.init(staff: staff, engraving: engraving, lyrics: lyrics, lyricTop: lyricTop))
+            blocks.append(.init(staff: staff, engraving: engraving, notice: projection.notice,
+                                lyrics: lyrics, lyricTop: lyricTop))
             y = lyricTop + lyricLines + (index == 0 ? 18 : 10) * session.textScale
         }
         return (blocks, y + 34)
@@ -123,7 +125,7 @@ struct ScoreRow: View {
                     context.fill(Path(CGRect(x: 10, y: top, width: 1, height: bottom - top)), with: .foreground)
                 }
             }.foregroundStyle(Color.primary).allowsHitTesting(false)
-            measureHeader
+            measureHeader(notice: blocks.compactMap(\.notice).first)
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 if blocks.count > 1 {
                     Text(block.staff.abbreviation).font(.caption2.weight(.semibold)).foregroundStyle(.teal)
@@ -164,7 +166,7 @@ struct ScoreRow: View {
         }.allowsHitTesting(false)
     }
 
-    private var measureHeader: some View {
+    private func measureHeader(notice: String?) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(measures) { measure in
                 let from = x(measure.range.start.doubleValue)
@@ -180,7 +182,8 @@ struct ScoreRow: View {
                     .accessibilityHint("Shiftキーで範囲を拡張")
             }
             HStack {
-                Text("拍位置をクリックして移動").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(notice ?? "拍位置をクリックして移動")
+                    .font(.system(size: 10)).foregroundStyle(notice == nil ? Color.secondary : Color.orange)
                 Spacer(minLength: 0)
             }.contentShape(Rectangle()).frame(width: max(0, width - left - 10), height: 18)
                 .offset(x: left, y: 36)

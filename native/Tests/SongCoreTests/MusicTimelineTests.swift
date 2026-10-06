@@ -107,7 +107,7 @@ struct MusicTimelineTests {
         #expect(separate.notes.count == 2 && !separate.diagnostics.isEmpty)
     }
 
-    @Test func scoreShowsNaturalAndRejectsUnrepresentableDuration() throws {
+    @Test func scoreShowsNaturalAndKeepsUnusualDurationOnStaff() throws {
         var song = SongDocument()
         song.music.measures = [.init(number: "1", range: .init(start: .zero, end: try beat(4)))]
         var sharp = Note(pitch: 61)
@@ -123,7 +123,14 @@ struct MusicTimelineTests {
         #expect(score.issue == nil)
         #expect(score.pieces.filter { $0.pitch != nil }.map(\.accidental) == ["♯", "♮"])
         song.music.events[1].duration = try Beat(1, 3)
-        #expect(NotationProjection(song: song, measures: measures).issue != nil)
+        let irregular = NotationProjection(song: song, measures: measures)
+        #expect(irregular.issue == nil)
+        #expect(irregular.notice?.contains("略譜") == true)
+        let notes = irregular.pieces.filter { $0.pitch != nil }
+        #expect(notes.map(\.pitch) == [61, 60])
+        #expect(notes[1].start == 1)
+        #expect(abs(notes[1].duration - 1.0 / 3) < 0.000_001)
+        #expect(notes[1].approximateRhythm)
     }
 
     @Test func noteTiedOverBarlineDoesNotRepeatAccidental() throws {

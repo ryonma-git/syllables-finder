@@ -78,7 +78,8 @@ struct ScorePreview {
                                                headerX: left - header, headerMeter: rowIndex == 0 ? headerMeter : nil,
                                                songEnd: songEnd, x: x)
                 StaffPainter.draw(engraving, in: context, color: ink)
-                if let issue = projection.issue, let text = StaffPainter.textPath(issue, font: lyricFont, size: 10, x: left, baseline: staffTop - 4) {
+                if let message = projection.issue ?? projection.notice,
+                   let text = StaffPainter.textPath(message, font: lyricFont, size: 10, x: left, baseline: staffTop - 4) {
                     context.addPath(text.path); context.setFillColor(CGColor(red: 0.8, green: 0.4, blue: 0, alpha: 1)); context.fillPath()
                 }
                 if parts.count > 1, let label = StaffPainter.textPath(part.name, font: lyricFont, size: 9, x: 4, baseline: staffTop + 2 * space + 3) {

@@ -20,6 +20,21 @@ struct StaffEngravingTests {
         engraving.marks.compactMap { if case .notehead(let point, _) = $0 { point } else { nil } }
     }
 
+    @Test func thirdBeatNoteStillEngravesAtItsExactPosition() throws {
+        var song = TwinkleSample.make()
+        song.music.events[0].duration = try Beat(1, 3)
+        let slices = Array(MeasureProjection(song: song).slices.prefix(1))
+        let projection = NotationProjection(song: song, measures: slices)
+        #expect(projection.issue == nil)
+        #expect(projection.notice != nil)
+        let (engraving, _) = engrave(song, measures: 0..<1)
+        #expect(engraving.hits.contains { $0.eventID == song.music.events[0].id && abs($0.duration - 1.0 / 3) < 0.000_001 })
+        #expect(heads(engraving).count == song.music.events.filter { $0.onset.doubleValue < 4 }.count)
+        #expect(engraving.marks.contains { if case .line(let a, let b, _) = $0 {
+            return a.y == 100 && b.y == 100 && b.x > a.x
+        } else { return false } })
+    }
+
     @Test func noteheadsSitExactlyOnLinesAndSpaces() {
         // Twinkle opens C4 C4 G4 G4 | A4 A4 G4(half).
         let (engraving, _) = engrave(TwinkleSample.make(), measures: 0..<2)

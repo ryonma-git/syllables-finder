@@ -10,6 +10,8 @@ public struct StaffPiece: Sendable, Equatable {
     public let accidental: String?
     public let tiedFrom: Bool
     public let tiedTo: Bool
+    /// The beat span is exact, but its note/rest symbol has a simplified rhythm.
+    public let approximateRhythm: Bool
     /// Absolute diatonic index (octave × 7 + letter, C = 0), independent of the clef.
     public var diatonic: Int? { step.map { $0 + 4 * 7 + 2 } }
 }
@@ -28,7 +30,8 @@ public struct NotationProjection: Sendable {
     public init(song: SongDocument, measures: [MeasureSlice], including include: (MusicalEvent) -> Bool = { _ in true }) {
         var output: [StaffPiece] = []
         var problem: String?
-        var notice: String?
+        var noteNotice = false
+        var approximateRhythm = false
         for measure in measures {
             var activeAccidentals: [Int: Int] = [:]
             let from = measure.range.start.doubleValue
@@ -46,7 +49,7 @@ public struct NotationProjection: Sendable {
                     if !Self.appendPieces(to: &output, id: nil, start: cursor, end: eventFrom,
                                       pitch: nil, step: nil, accidental: nil,
                                       continuationBefore: false, continuationAfter: false) {
-                        problem = "細かい音価はピアノロールで表示します。"; break
+                        approximateRhythm = true
                     }
                 }
                 if let note = event.note {
@@ -54,7 +57,7 @@ public struct NotationProjection: Sendable {
                     var parsed = Self.parse(name)
                     if parsed?.pitch != note.pitch, note.notation?.spelling != nil {
                         parsed = Self.parse(Self.pitchClasses[note.pitch % 12] + String(note.pitch / 12 - 1))
-                        notice = "解釈できない音名は標準の音名で表示しています。"
+                        noteNotice = true
                     }
                     guard let parsed, parsed.pitch == note.pitch else {
                         problem = "音名を五線へ変換できません。ピアノロールで表示します。"; break
@@ -76,13 +79,13 @@ public struct NotationProjection: Sendable {
                                       pitch: note.pitch, step: key - (4 * 7 + 2), accidental: accidental,
                                       continuationBefore: continued,
                                       continuationAfter: ((try? event.range.end.doubleValue) ?? eventTo) > to) {
-                        problem = "細かい音価はピアノロールで表示します。"; break
+                        approximateRhythm = true
                     }
                 } else {
                     if !Self.appendPieces(to: &output, id: event.id, start: eventFrom, end: eventTo,
                                       pitch: nil, step: nil, accidental: nil,
                                       continuationBefore: false, continuationAfter: false) {
-                        problem = "細かい音価はピアノロールで表示します。"; break
+                        approximateRhythm = true
                     }
                 }
                 cursor = eventTo
@@ -92,13 +95,17 @@ public struct NotationProjection: Sendable {
                 if !Self.appendPieces(to: &output, id: nil, start: cursor, end: to,
                                   pitch: nil, step: nil, accidental: nil,
                                   continuationBefore: false, continuationAfter: false) {
-                    problem = "細かい音価はピアノロールで表示します。"; break
+                    approximateRhythm = true
                 }
             }
         }
         pieces = problem == nil ? output : []
         issue = problem
-        self.notice = notice
+        let notices = [
+            approximateRhythm ? "変則音価は略譜です（音高・拍位置は正確、符尾・休符は簡略表示）。" : nil,
+            noteNotice ? "解釈できない音名は標準の音名で表示しています。" : nil
+        ].compactMap { $0 }
+        self.notice = notices.isEmpty ? nil : notices.joined(separator: " ")
     }
 
     private static func spelling(note: Note) -> String {
@@ -120,18 +127,29 @@ public struct NotationProjection: Sendable {
     private static func appendPieces(to result: inout [StaffPiece], id: UUID?, start: Double, end: Double,
                                      pitch: Int?, step: Int?, accidental: String?,
                                      continuationBefore: Bool, continuationAfter: Bool) -> Bool {
+        var exactPieces: [StaffPiece] = []
         var cursor = start
         var count = 0
         while cursor < end - 0.000_001 && count < 10_000 {
             let remaining = end - cursor
-            guard let value = values.first(where: { $0 <= remaining + 0.000_001 }) else { return false }
+            guard let value = values.first(where: { $0 <= remaining + 0.000_001 }) else { break }
             let next = cursor + value
-            result.append(.init(eventID: id, start: cursor, duration: value, pitch: pitch, step: step,
+            exactPieces.append(.init(eventID: id, start: cursor, duration: value, pitch: pitch, step: step,
                                 accidental: count == 0 ? accidental : nil,
                                 tiedFrom: pitch != nil && (count > 0 || continuationBefore),
-                                tiedTo: pitch != nil && (next < end - 0.000_001 || continuationAfter)))
+                                tiedTo: pitch != nil && (next < end - 0.000_001 || continuationAfter),
+                                approximateRhythm: false))
             cursor = next; count += 1
         }
-        return cursor >= end - 0.000_001
+        if cursor >= end - 0.000_001 {
+            result.append(contentsOf: exactPieces)
+            return true
+        }
+        // Preserve the note and its exact horizontal beat position when the duration needs
+        // tuplets or finer subdivisions than this engraver can express.
+        result.append(.init(eventID: id, start: start, duration: end - start, pitch: pitch, step: step,
+                            accidental: accidental, tiedFrom: pitch != nil && continuationBefore,
+                            tiedTo: pitch != nil && continuationAfter, approximateRhythm: true))
+        return false
     }
 }

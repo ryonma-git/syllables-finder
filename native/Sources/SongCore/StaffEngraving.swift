@@ -138,7 +138,8 @@ public struct StaffEngraving: Sendable {
         let y: Double
         let width: Double
         var flags: Int {
-            piece.duration < 0.5 - 1e-9 ? 2 : piece.duration < 1 - 1e-9 ? 1 : 0
+            if piece.approximateRhythm { return 0 }
+            return piece.duration < 0.5 - 1e-9 ? 2 : piece.duration < 1 - 1e-9 ? 1 : 0
         }
     }
 
@@ -168,7 +169,8 @@ public struct StaffEngraving: Sendable {
                 continue
             }
             let accidental = piece.accidental.flatMap(AccidentalKind.init(symbol:))
-            let kind: NoteheadKind = piece.duration >= 4 - 1e-9 ? .whole : piece.duration >= 2 - 1e-9 ? .half : .black
+            let kind: NoteheadKind = piece.approximateRhythm ? .black
+                : piece.duration >= 4 - 1e-9 ? .whole : piece.duration >= 2 - 1e-9 ? .half : .black
             let width = (kind == .whole ? Self.wholeWidth : Self.headWidth) * sp
             let left = x(piece.start) + (accidental == nil ? 0.5 : 1.75) * sp
             let y = self.y(position: position)
@@ -196,7 +198,7 @@ public struct StaffEngraving: Sendable {
             add(.notehead(.init(head.centerX, y), kind))
             extend(y - 0.6 * sp); extend(y + 0.6 * sp)
             if let accidental { add(.accidental(.init(left - 0.25 * sp - 0.45 * sp, y), accidental)) }
-            if Self.isDotted(piece.duration) {
+            if !piece.approximateRhythm && Self.isDotted(piece.duration) {
                 let dotY = position % 2 == 0 ? self.y(position: position + 1) : y
                 add(.dot(.init(left + width + 0.5 * sp, dotY)))
             }
@@ -207,7 +209,8 @@ public struct StaffEngraving: Sendable {
 
     private mutating func engraveRest(_ piece: StaffPiece, x: (Double) -> Double) {
         let sp = space
-        let kind: RestKind = piece.duration >= 4 - 1e-9 ? .whole : piece.duration >= 2 - 1e-9 ? .half
+        let kind: RestKind = piece.approximateRhythm ? .quarter
+            : piece.duration >= 4 - 1e-9 ? .whole : piece.duration >= 2 - 1e-9 ? .half
             : piece.duration >= 1 - 1e-9 ? .quarter : piece.duration >= 0.5 - 1e-9 ? .eighth : .sixteenth
         let centerX = x(piece.start) + 1.1 * sp
         let y: Double
@@ -217,7 +220,9 @@ public struct StaffEngraving: Sendable {
         default: y = staffTop + 2 * sp
         }
         add(.rest(.init(centerX, y), kind))
-        if Self.isDotted(piece.duration) { add(.dot(.init(centerX + 0.9 * sp, staffTop + 1.5 * sp))) }
+        if !piece.approximateRhythm && Self.isDotted(piece.duration) {
+            add(.dot(.init(centerX + 0.9 * sp, staffTop + 1.5 * sp)))
+        }
     }
 
     private static func beamGroupLength(meter: Meter?) -> Double {
