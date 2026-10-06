@@ -658,7 +658,8 @@ struct WorkspaceView: View {
     private func applyPracticeRange(_ range: BeatRange) {
         session.practiceRange = range
         session.practiceCandidate = nil
-        if session.playbackScope != .whole { resetForScopeChange() }
+        if session.playbackScope == .whole { session.playbackScope = .once }
+        resetForScopeChange()
     }
 
     private func seek(_ beat: Double) {
