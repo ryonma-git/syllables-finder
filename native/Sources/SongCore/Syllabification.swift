@@ -252,6 +252,54 @@ public enum Syllabifier {
 
     private static func alphabeticPart(_ core: String, language: String) -> SyllabifiedWord {
         var letters = letters(core)
+        let (nuclei, note) = orthographicNuclei(in: &letters, language: language)
+        let n = letters.count
+        guard !nuclei.isEmpty else { return .init(syllables: [core]) }
+        // Onsets: how many consonant letters before each nucleus (after the first) start its syllable.
+        var starts = [0]
+        for k in 1..<nuclei.count {
+            let clusterStart = nuclei[k - 1].upperBound, clusterEnd = nuclei[k].lowerBound
+            let onset = onsetLength(letters, clusterStart..<clusterEnd, language: language,
+                                    finalLE: language == "en" && k == nuclei.count - 1 && syllabicLE(letters, nucleus: nuclei[k]))
+            starts.append(clusterEnd - onset)
+        }
+        // German inseparable prefixes keep their own syllable when the rest starts with a valid onset (be-tre-ten).
+        if language == "de", nuclei.count >= 2 {
+            let lower = String(letters.map(\.base))
+            let onsets: Set<String> = ["tr", "br", "pr", "gr", "kr", "fr", "dr", "bl", "pl", "kl", "gl", "fl", "schr", "str", "spr",
+                                       "sch", "st", "sp", "zw", "schw", "schl", "schm", "schn", "pfl", "pfr", "ch", "qu"]
+            for prefix in ["ver", "zer", "ent", "emp", "be", "ge"] where lower.hasPrefix(prefix) {
+                let end = prefix.count
+                guard nuclei[0].upperBound <= end, nuclei[1].lowerBound >= end else { continue }
+                let cluster = String(lower[lower.index(lower.startIndex, offsetBy: end)..<lower.index(lower.startIndex, offsetBy: nuclei[1].lowerBound)])
+                if cluster.count <= 1 || onsets.contains(cluster) { starts[1] = end }
+                break
+            }
+        }
+        let characters = letters.map(\.character)
+        var syllables: [String] = []
+        for k in 0..<starts.count {
+            let end = k + 1 < starts.count ? starts[k + 1] : n
+            syllables.append(String(characters[starts[k]..<end]))
+        }
+        return .init(syllables: syllables, stressIndex: stress(letters, nuclei: nuclei, syllables: syllables, language: language), note: note)
+    }
+
+    /// Character offsets for written vowel cues. The same rules drive syllabification and print coloring.
+    /// These are orthographic hints, not a phonetic transcription.
+    public static func orthographicVowelNuclei(in text: String, language: String) -> [Range<Int>] {
+        let code = String(language.prefix(2)).lowercased()
+        guard ["en", "de", "fr", "es", "it", "la", "ru"].contains(code) else { return [] }
+        let characters = Array(text)
+        guard let first = characters.firstIndex(where: { $0.isLetter }),
+              let last = characters.lastIndex(where: { $0.isLetter }) else { return [] }
+        var letters = letters(String(characters[first...last]))
+        return orthographicNuclei(in: &letters, language: code).ranges.map {
+            (first + $0.lowerBound)..<(first + $0.upperBound)
+        }
+    }
+
+    private static func orthographicNuclei(in letters: inout [Letter], language: String) -> (ranges: [Range<Int>], note: String?) {
         let vowels = vowelBases[language] ?? vowelBases["default"]!
         let n = letters.count
         for i in 0..<n { letters[i].vowel = vowels.contains(letters[i].base) }
@@ -312,35 +360,7 @@ public enum Syllabifier {
                 note = "語末のeは歌唱では1音節として数えます（次の語が母音で始まれば省略されることがあります）。"
             }
         }
-        guard !nuclei.isEmpty else { return .init(syllables: [core]) }
-        // Onsets: how many consonant letters before each nucleus (after the first) start its syllable.
-        var starts = [0]
-        for k in 1..<nuclei.count {
-            let clusterStart = nuclei[k - 1].upperBound, clusterEnd = nuclei[k].lowerBound
-            let onset = onsetLength(letters, clusterStart..<clusterEnd, language: language,
-                                    finalLE: language == "en" && k == nuclei.count - 1 && syllabicLE(letters, nucleus: nuclei[k]))
-            starts.append(clusterEnd - onset)
-        }
-        // German inseparable prefixes keep their own syllable when the rest starts with a valid onset (be-tre-ten).
-        if language == "de", nuclei.count >= 2 {
-            let lower = String(letters.map(\.base))
-            let onsets: Set<String> = ["tr", "br", "pr", "gr", "kr", "fr", "dr", "bl", "pl", "kl", "gl", "fl", "schr", "str", "spr",
-                                       "sch", "st", "sp", "zw", "schw", "schl", "schm", "schn", "pfl", "pfr", "ch", "qu"]
-            for prefix in ["ver", "zer", "ent", "emp", "be", "ge"] where lower.hasPrefix(prefix) {
-                let end = prefix.count
-                guard nuclei[0].upperBound <= end, nuclei[1].lowerBound >= end else { continue }
-                let cluster = String(lower[lower.index(lower.startIndex, offsetBy: end)..<lower.index(lower.startIndex, offsetBy: nuclei[1].lowerBound)])
-                if cluster.count <= 1 || onsets.contains(cluster) { starts[1] = end }
-                break
-            }
-        }
-        let characters = letters.map(\.character)
-        var syllables: [String] = []
-        for k in 0..<starts.count {
-            let end = k + 1 < starts.count ? starts[k + 1] : n
-            syllables.append(String(characters[starts[k]..<end]))
-        }
-        return .init(syllables: syllables, stressIndex: stress(letters, nuclei: nuclei, syllables: syllables, language: language), note: note)
+        return (nuclei, note)
     }
 
     /// English "-le" after a consonant is its own syllable (lit-tle, ta-ble), unlike "whale".

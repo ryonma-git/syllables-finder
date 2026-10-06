@@ -28,6 +28,12 @@ struct ReadingView: View {
                         Text("劇ドイツ語：語尾の r も発音（Brüder＝ブリューデル）。手修正した発音は保持します。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    if song.phrases.contains(where: {
+                        ["ja", "ko", "zh"].contains(String(($0.language ?? song.metadata.sourceLanguage).prefix(2)))
+                    }) {
+                        Text("かな・漢字・ハングルの色付き文字は、音節字全体の目印です。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if song.words.isEmpty && song.music.events.contains(where: { $0.note != nil }) {
                         ContentUnavailableView {
                             Label("歌詞は未登録です", systemImage: "text.badge.plus")
@@ -156,7 +162,7 @@ private struct InterlinearWord: View {
     }
     private var coloredLyric: Text {
         printWord.displayFragments.reduce(Text("")) { result, fragment in
-            result + Text(fragment.text).foregroundColor(fragment.isVowelNucleus ? .teal : .primary)
+            result + Text(fragment.text).foregroundColor(fragment.isColored ? .teal : .primary)
         }
     }
     var body: some View {

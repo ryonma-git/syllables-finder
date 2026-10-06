@@ -37,7 +37,7 @@ public enum WordSheet {
     private static func document(_ sheet: PrintSheet) -> String {
         var body = paragraph(sheet.title, style: "Title")
         body += paragraph(sheet.order.legend + (sheet.pronunciationLabel.map { "　｜" + $0 } ?? "")
-                          + "。色付き文字は母音核、· は音節の区切りです。", style: "Translation")
+                          + "。" + sheet.colorLegend + "。", style: "Translation")
         if sheet.phrases.isEmpty { body += paragraph("歌詞はまだありません。", style: "Translation") }
         var lastSection = ""
         for phrase in sheet.phrases {
@@ -131,7 +131,7 @@ public enum WordSheet {
 
     private static func syllableParagraph(_ word: PrintWord, appearance: PrintAppearance) -> String {
         let runs = word.displayFragments.map { segment in
-            "<w:r><w:rPr><w:b/><w:color w:val=\"\(segment.isVowelNucleus ? appearance.vowelNucleus.hex : "242424")\"/></w:rPr><w:t xml:space=\"preserve\">\(escape(segment.text))</w:t></w:r>"
+            "<w:r><w:rPr><w:b/><w:color w:val=\"\(segment.isColored ? appearance.vowelNucleus.hex : "242424")\"/></w:rPr><w:t xml:space=\"preserve\">\(escape(segment.text))</w:t></w:r>"
         }.joined()
         return "<w:p><w:pPr><w:pStyle w:val=\"Lyric\"/></w:pPr>\(runs)</w:p>"
     }

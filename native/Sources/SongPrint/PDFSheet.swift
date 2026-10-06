@@ -44,6 +44,7 @@ private final class PDFPainter {
     private let order: ReadingOrder
     private let appearance: PrintAppearance
     private let pronunciationLabel: String?
+    private let colorLegend: String
     private let size: CGSize
     private var accent: NSColor { appearance.accent.nsColor }
     private var nucleus: NSColor { appearance.vowelNucleus.nsColor }
@@ -68,6 +69,7 @@ private final class PDFPainter {
         self.order = sheet.order
         self.appearance = sheet.appearance
         self.pronunciationLabel = sheet.pronunciationLabel
+        self.colorLegend = sheet.colorLegend
     }
 
     func render(_ sheet: PrintSheet) {
@@ -102,7 +104,7 @@ private final class PDFPainter {
 
     private func endPage() {
         fill(CGRect(x: margin, y: footerTop, width: contentWidth, height: 1), line)
-        drawText("色付き文字は綴り上の母音核の目安  ·  は音節の区切り", x: margin, y: footerTop + 11,
+        drawText(colorLegend, x: margin, y: footerTop + 11,
                  width: contentWidth - 55, font: .systemFont(ofSize: 8.5), color: muted)
         drawText("\(page)", x: size.width - margin - 30, y: footerTop + 11, width: 30,
                  font: .monospacedDigitSystemFont(ofSize: 9, weight: .regular), color: muted,
@@ -263,7 +265,7 @@ private final class PDFPainter {
         let font = NSFont.systemFont(ofSize: fontSize(13), weight: .semibold)
         for fragment in word.displayFragments {
             result.append(NSAttributedString(string: fragment.text, attributes: [
-                .font: font, .foregroundColor: fragment.isVowelNucleus ? nucleus : dark
+                .font: font, .foregroundColor: fragment.isColored ? nucleus : dark
             ]))
         }
         return result

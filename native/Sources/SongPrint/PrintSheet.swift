@@ -4,10 +4,13 @@ import SongCore
 public struct PrintFragment: Sendable, Equatable {
     public let text: String
     public let isVowelNucleus: Bool
+    public let isSyllableCue: Bool
+    public var isColored: Bool { isVowelNucleus || isSyllableCue }
 
-    public init(text: String, isVowelNucleus: Bool) {
+    public init(text: String, isVowelNucleus: Bool, isSyllableCue: Bool = false) {
         self.text = text
         self.isVowelNucleus = isVowelNucleus
+        self.isSyllableCue = isSyllableCue
     }
 }
 
@@ -17,28 +20,55 @@ public struct PrintSyllable: Sendable, Equatable {
 
     public init(text: String, language: String) {
         self.text = text
-        // This is an orthographic cue for English and German syllables already stored in the document.
-        // It does not infer an IPA transcription or change the saved pronunciation.
-        let english = language.hasPrefix("en")
-        let german = language.hasPrefix("de")
-        guard english || german else {
+        // Use the lyric entry rules for written vowel cues; saved syllables and IPA are unchanged.
+        let characters = Array(text)
+        let code = String(language.prefix(2)).lowercased()
+        let syllableCues: [Range<Int>] = ["ja", "ko", "zh"].contains(code)
+            ? characters.indices.filter { Self.isSyllableCarrier(characters[$0], language: code) }.map { $0..<($0 + 1) }
+            : []
+        // A stored sung syllable carries one nucleus. Additional written vowels can be silent
+        // (French "Jacques"), so do not color a second candidate in the same stored syllable.
+        let ranges = Syllabifier.orthographicVowelNuclei(in: text, language: language).first.map { [$0] } ?? []
+        guard !ranges.isEmpty || !syllableCues.isEmpty else {
             fragments = [.init(text: text, isVowelNucleus: false)]
             return
         }
-        let letters = Array(text)
-        let vowels = german ? "aeiouyäöü" : "aeiouy"
-        guard let start = letters.indices.first(where: { vowels.contains(letters[$0].lowercased()) }) else {
-            fragments = [.init(text: text, isVowelNucleus: false)]
-            return
+        var highlighted = Array(repeating: false, count: characters.count)
+        var syllabic = Array(repeating: false, count: characters.count)
+        for range in ranges {
+            for index in range { highlighted[index] = true }
         }
-        var end = start + 1
-        while end < letters.count && vowels.contains(letters[end].lowercased()) { end += 1 }
-        if english && end < letters.count && letters[end].lowercased() == "w" { end += 1 }
+        for range in syllableCues {
+            for index in range { syllabic[index] = true }
+        }
         var parts: [PrintFragment] = []
-        if start > 0 { parts.append(.init(text: String(letters[..<start]), isVowelNucleus: false)) }
-        parts.append(.init(text: String(letters[start..<end]), isVowelNucleus: true))
-        if end < letters.count { parts.append(.init(text: String(letters[end...]), isVowelNucleus: false)) }
+        for (index, character) in characters.enumerated() {
+            let colored = highlighted[index]
+            let cue = syllabic[index]
+            if let last = parts.indices.last, parts[last].isVowelNucleus == colored,
+               parts[last].isSyllableCue == cue {
+                parts[last] = .init(text: parts[last].text + String(character), isVowelNucleus: colored, isSyllableCue: cue)
+            } else {
+                parts.append(.init(text: String(character), isVowelNucleus: colored, isSyllableCue: cue))
+            }
+        }
         fragments = parts
+    }
+
+    private static func isSyllableCarrier(_ character: Character, language: String) -> Bool {
+        guard let scalar = character.unicodeScalars.first?.value else { return false }
+        switch language {
+        case "ja":
+            return ((0x3041...0x309F).contains(scalar) || (0x30A0...0x30FF).contains(scalar))
+                && !"んンっッー".contains(character)
+        case "ko":
+            return (0xAC00...0xD7A3).contains(scalar) || (0x1161...0x1175).contains(scalar)
+                || (0x314F...0x3163).contains(scalar)
+        case "zh":
+            return (0x3400...0x4DBF).contains(scalar) || (0x4E00...0x9FFF).contains(scalar)
+                || (0x20000...0x2FA1F).contains(scalar)
+        default: return false
+        }
     }
 }
 
@@ -148,6 +178,14 @@ public struct PrintSheet: Sendable {
     public let order: ReadingOrder
     public let appearance: PrintAppearance
     public let pronunciationLabel: String?
+
+    public var colorLegend: String {
+        let hasSyllableCues = phrases.flatMap(\.words).flatMap(\.syllables)
+            .contains { $0.fragments.contains(where: \.isSyllableCue) }
+        return hasSyllableCues
+            ? "色付き文字は母音核、かな・漢字・ハングルでは音節字全体の目安  ·  は音節の区切り"
+            : "色付き文字は綴り上の母音核の目安  ·  は音節の区切り"
+    }
 
     public init(song: SongDocument, order: ReadingOrder = .baseline,
                 appearance: PrintAppearance = .init()) {

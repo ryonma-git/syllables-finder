@@ -90,14 +90,50 @@ struct PrintTests {
         #expect(word.count > 3_000)
     }
 
+    @Test func printedNucleiFollowEachAlphabeticLanguage() throws {
+        func colored(_ text: String, _ language: String) -> String {
+            PrintSyllable(text: text, language: language).fragments
+                .filter(\.isVowelNucleus).map(\.text).joined()
+        }
+        #expect(colored("make", "en") == "a")
+        #expect(colored("schön", "de") == "ö")
+        #expect(colored("Frè", "fr") == "è")
+        #expect(colored("Jacques", "fr") == "a")
+        #expect(colored("quié", "es") == "ié")
+        #expect(colored("cia", "it") == "a")
+        #expect(colored("quae", "la") == "ae")
+        #expect(colored("Пе", "ru") == "е")
+        for language in ["en", "de", "fr", "es", "it", "la", "ru"] {
+            let entry = try #require(SampleCatalog.entries.first { $0.languageCode == language })
+            let words = PrintSheet(song: entry.make()).phrases.flatMap(\.words)
+            #expect(words.contains { $0.displayFragments.contains(where: \.isVowelNucleus) })
+        }
+    }
+
     @Test func unsegmentedWordsAreNotAssignedInventedVowels() {
         let word = PrintSyllable(text: "sch", language: "en")
         #expect(word.fragments == [PrintFragment(text: "sch", isVowelNucleus: false)])
-        let french = PrintSyllable(text: "Frè", language: "fr")
-        #expect(french.fragments == [PrintFragment(text: "Frè", isVowelNucleus: false)])
         let german = PrintSyllable(text: "schö", language: "de")
         #expect(german.fragments == [PrintFragment(text: "sch", isVowelNucleus: false),
                                       PrintFragment(text: "ö", isVowelNucleus: true)])
+    }
+
+    @Test func syllabicScriptsUseWholeCharacterCuesWithoutClaimingVowelLetters() throws {
+        for (text, language) in [("さ", "ja"), ("아", "ko"), ("好", "zh")] {
+            let fragment = try #require(PrintSyllable(text: text, language: language).fragments.first)
+            #expect(fragment.text == text)
+            #expect(fragment.isSyllableCue && !fragment.isVowelNucleus && fragment.isColored)
+            let entry = try #require(SampleCatalog.entries.first { $0.languageCode == language })
+            let sheet = PrintSheet(song: entry.make())
+            #expect(sheet.phrases.flatMap(\.words).contains {
+                $0.displayFragments.contains(where: \.isSyllableCue)
+            })
+            #expect(sheet.colorLegend.contains("音節字全体"))
+        }
+        for text in ["ん", "っ", "ー", "!"] {
+            let colored = PrintSyllable(text: text, language: "ja").fragments.contains { $0.isColored }
+            #expect(!colored)
+        }
     }
 
     @Test func partialKatakanaRemainsVisible() throws {
