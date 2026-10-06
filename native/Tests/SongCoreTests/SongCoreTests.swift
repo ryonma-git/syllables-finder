@@ -3,6 +3,16 @@ import Testing
 @testable import SongCore
 
 struct SongCoreTests {
+    @Test func unalignedLyricsRemainAvailableToSingingView() throws {
+        var song = TwinkleSample.make()
+        #expect(!song.hasUnplacedLyrics)
+        song.alignments.removeAll()
+        #expect(song.hasUnplacedLyrics)
+        let proposal = try LyricAligner.propose(song: song, partID: song.music.parts[0].id)
+        LyricAligner.apply(proposal, to: &song)
+        #expect(!song.hasUnplacedLyrics)
+    }
+
     @Test func generatedSongKeepsStanzasAndOpensAsAValidDocument() throws {
         let request = SongGenerationRequest(title: "Practice", sourceLanguage: "en",
                                             lyrics: "One short line\r\nAnother line\r\n\r\nFinal line\r\n",

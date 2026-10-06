@@ -24,6 +24,9 @@ struct SingingView: View {
                 : stride(from: 0, to: slices.count, by: columns).map { Array(slices[$0..<min($0 + columns, slices.count)]) }
             VStack(alignment: .leading, spacing: 8) {
                 controls(slices: slices)
+                if song.hasUnplacedLyrics {
+                    unplacedLyrics
+                }
                 if let warning = projection.warning {
                     Label(warning, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(.horizontal, 20)
                 }
@@ -97,6 +100,34 @@ struct SingingView: View {
     }
 
     static let overviewScale = 54.0
+
+    private var unplacedLyrics: some View {
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Label("歌詞（音符との対応は未確定）", systemImage: "text.quote")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button("歌詞を音符に割り当てる…") { session.showingAlignment = true }
+                    .font(.caption)
+                    .disabled(song.music.events.isEmpty || song.syllables.isEmpty)
+            }
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 5) {
+                    ForEach(song.phrases) { phrase in
+                        Text(phrase.originalText)
+                            .font(.system(size: 15 * session.textScale, design: .serif))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }.padding(.vertical, 2)
+            }.frame(height: 150)
+            Text("音符との位置合わせ前のため、歌詞は再生位置に連動しません。")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 18)
+    }
 
     private func follow(_ position: Double, columns: Int, reader: ScrollViewProxy) {
         guard session.followPlayback else { return }

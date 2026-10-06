@@ -23,6 +23,18 @@ public struct SongDocument: Codable, Equatable, Sendable {
     public func words(in phrase: Phrase) -> [Word] { phrase.wordIDs.compactMap { word($0) } }
     public func syllables(in word: Word) -> [Syllable] { word.syllableIDs.compactMap { syllable($0) } }
 
+    /// Lyrics that have no note position must remain readable outside the timed staff lanes.
+    public var hasUnplacedLyrics: Bool {
+        guard phrases.contains(where: { !$0.originalText.isEmpty }) else { return false }
+        let placed = Set(alignments.filter { alignment in
+            alignment.musicTargets.contains { target in
+                if case .event = target { return true }
+                return false
+            }
+        }.flatMap(\.languageTargets).filter { $0.kind == .syllable }.map(\.id))
+        return syllables.isEmpty || syllables.contains { !placed.contains($0.id) }
+    }
+
     /// Time ranges where a language item is sung; with `partID`, only in that part.
     public func ranges(for target: LanguageTarget, inPart partID: UUID? = nil) -> [BeatRange] {
         alignments.filter { $0.languageTargets.contains(target) }.flatMap { alignment in
