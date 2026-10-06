@@ -74,6 +74,7 @@ struct WorkspaceView: View {
     @State private var addingLyrics = false
     @State private var showingSamples = false
     @State private var selectedSampleID = "twinkle"
+    @State private var selectedLocalSampleURL: URL?
     @State private var showAnalysis = false
     @State private var playTask: Task<Void, Never>?
     @State private var changingTempo = false
@@ -160,6 +161,8 @@ struct WorkspaceView: View {
                 session.mode = .singing
                 session.pitchDisplay = qa.hasSuffix("roll") ? .pianoRoll : .staff
                 session.singingLayout = qa.hasPrefix("detail") ? .detail : .overview
+            } else if song.words.isEmpty && song.music.events.contains(where: { $0.note != nil }) {
+                session.mode = .singing
             }
             if session.phraseID == nil, let phrase { session.select(phrase) }
             session.bpm = song.music.tempos.first?.bpm ?? 88
@@ -259,7 +262,9 @@ struct WorkspaceView: View {
                                     Text(Syllabifier.displayName(for: song.language(of: phrase)))
                                         .font(.caption2.weight(.semibold)).foregroundStyle(.teal)
                                 }
-                                Text(phrase.originalText).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                                Text(phrase.originalText.isEmpty && !phrase.musicalEventIDs.isEmpty
+                                     ? "旋律のみ（歌詞未登録）" : phrase.originalText)
+                                    .font(.system(size: 13, weight: .medium)).lineLimit(2)
                                 Text(phrase.translation.value.isEmpty ? "訳を追加できます" : phrase.translation.value)
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }.padding(.vertical, 7).tag(phrase.id)
@@ -346,17 +351,37 @@ struct WorkspaceView: View {
     }
 
     private var samplePicker: some View {
+        let localSamples = LocalSampleLibrary.entries()
+        let local = localSamples.first { $0.url == selectedLocalSampleURL }
         let selected = SampleCatalog.entries.first(where: { $0.id == selectedSampleID }) ?? SampleCatalog.entries[0]
-        let preview = selected.make()
+        let preview = local?.song ?? selected.make()
+        let title = local?.title ?? selected.title
+        let languageName = local?.languageName ?? selected.languageName
         return HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("サンプル曲").font(.title2.bold())
-                Text("歌詞・読みを確認できます。音符の有無はサンプルごとに異なります。")
+                Text("歌詞や旋律を確認できます。未登録の項目は明示します。")
                     .font(.callout).foregroundStyle(.secondary)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
+                        if !localSamples.isEmpty {
+                            Text("このMacの曲").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            ForEach(localSamples) { entry in
+                                Button { selectedLocalSampleURL = entry.url } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(entry.title).font(.headline)
+                                        Text("\(entry.languageName) · \(entry.subtitle)").font(.caption).foregroundStyle(.secondary)
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                        .background(selectedLocalSampleURL == entry.url ? Color.teal.opacity(0.12) : Color.clear,
+                                                    in: RoundedRectangle(cornerRadius: 10))
+                                }.buttonStyle(.plain).accessibilityLabel("このMacの曲 \(entry.title)")
+                            }
+                        }
+                        Button("このMacの曲を追加…", systemImage: "plus") { chooseLocalSample() }
+                            .buttonStyle(.plain).foregroundStyle(.teal).padding(12)
+                        Text("アプリ内サンプル").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 10)
                         ForEach(SampleCatalog.entries) { entry in
-                            Button { selectedSampleID = entry.id } label: {
+                            Button { selectedSampleID = entry.id; selectedLocalSampleURL = nil } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(entry.title).font(.headline)
                                     HStack(spacing: 7) {
@@ -375,11 +400,16 @@ struct WorkspaceView: View {
             }.padding(24).frame(width: 285)
             Divider()
             VStack(alignment: .leading, spacing: 14) {
-                Text(selected.title).font(.system(size: 29, weight: .semibold, design: .serif))
-                Text("原語：\(selected.languageName)").font(.caption.weight(.semibold)).foregroundStyle(.teal)
-                Text(selected.details).foregroundStyle(.secondary)
+                Text(title).font(.system(size: 29, weight: .semibold, design: .serif))
+                Text("原語：\(languageName)").font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                Text(local.map { "このMacだけに保存した曲です。\($0.subtitle)" } ?? selected.details)
+                    .foregroundStyle(.secondary)
                 Divider()
                 Text("歌詞のプレビュー").font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                if preview.words.isEmpty {
+                    Text("歌詞は未登録です。旋律は「歌う」で確認できます。")
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(Array(preview.phrases.prefix(3))) { phrase in
                     VStack(alignment: .leading, spacing: 3) {
                         Text(phrase.originalText).font(.system(size: 17, weight: .medium, design: .serif))
@@ -397,6 +427,20 @@ struct WorkspaceView: View {
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }.frame(width: 720, height: 480)
+    }
+
+    private func chooseLocalSample() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.songProject]
+        panel.allowsMultipleSelection = false
+        panel.message = "このMacだけの曲として追加する歌唱練習ドキュメントを選んでください。"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor in
+                do { selectedLocalSampleURL = try LocalSampleLibrary.add(url) }
+                catch { session.error = "曲を追加できませんでした: \(error.localizedDescription)" }
+            }
+        }
     }
 
     private var lyricsSheet: some View {
@@ -485,6 +529,9 @@ struct WorkspaceView: View {
         session.position = 0
         session.detailIndex = 0
         session.playbackScope = .whole
+        if sample.words.isEmpty && sample.music.events.contains(where: { $0.note != nil }) {
+            session.mode = .singing
+        }
         let first = Array(MeasureProjection(song: file.song).slices.prefix(2))
         if let start = first.first?.range.start, let end = first.last?.range.end {
             session.practiceRange = .init(start: start, end: end)

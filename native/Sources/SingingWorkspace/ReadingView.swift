@@ -28,6 +28,16 @@ struct ReadingView: View {
                         Text("劇ドイツ語：語尾の r も発音（Brüder＝ブリューデル）。手修正した発音は保持します。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    if song.words.isEmpty && song.music.events.contains(where: { $0.note != nil }) {
+                        ContentUnavailableView {
+                            Label("歌詞は未登録です", systemImage: "text.badge.plus")
+                        } description: {
+                            Text("旋律は「歌う」で表示できます。歌詞は「歌詞を追加」から入力できます。")
+                        } actions: {
+                            Button("楽譜を表示") { session.mode = .singing }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
                     ForEach(song.sections) { section in
                         VStack(alignment: .leading, spacing: 8 * session.textScale) {
                             Text(section.title)

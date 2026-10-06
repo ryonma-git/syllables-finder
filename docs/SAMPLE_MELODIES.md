@@ -26,4 +26,4 @@
 
 ABC譜の音符列、Mu-techのMIDIでは主旋律チャンネル、白樺では譜面の冒頭に対応するMIDIパートを使用しています。音符はアプリ内で1拍480 tickのデータとして保持し、`.songproj` を生成すると `source/Melody.mid` を書き出します。追加した10曲の歌詞は原語の短い一行だけで、発音記号とカタカナは未入力です。
 
-「カチューシャ」は1938年の作曲作品であり、上記の伝承曲と同列には扱いません。作曲者の権利者は[IMSLP](https://imslp.org/wiki/Katyusha_(Blanter,_Matvey))上で音楽のCC BY-SA利用を認めていますが、歌詞の許諾は別です。このリポジトリには同曲の旋律・歌詞を収録しません。
+「カチューシャ」は1938年の作曲作品であり、上記の伝承曲と同列には扱いません。作曲者の権利者は[IMSLP](https://imslp.org/wiki/Katyusha_(Blanter,_Matvey))上で音楽のCC BY-SA利用を認めていますが、歌詞の許諾は別です。このリポジトリには同曲の旋律・歌詞を収録しません。私用の `.songproj` はアプリの「サンプルを表示」→「このMacの曲を追加…」から登録できます。登録した文書は `~/Library/Application Support/SingingWorkspace/LocalSamples/` にコピーされ、元ファイルは保持されます。
