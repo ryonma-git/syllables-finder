@@ -2,7 +2,7 @@
 """
 app.py
 
-英語テキストを入力すると、発音上の母音核にあたる文字だけを赤字にした .docx を
+英語テキストを入力すると、発音上の母音核にあたる文字だけを赤字にした .docx / PDF を
 生成するローカルGUIアプリ（tkinter）。
 
 用途:
@@ -11,6 +11,7 @@ app.py
 
 主な機能:
     - 母音核の赤字化 → .docx 出力（Arial / 24pt など指定可）
+    - 同じデザインの PDF 出力（タイトル付きの見出し帯・凡例・なまえ欄）
     - プレビュー（赤字対象を [ ] で表示）
     - うた・チャンツ ライブラリ（著作権フリー / PD のみ内蔵。検索→選択→入力欄へ）
     - 「曲名でブラウザ検索」（アプリは取得・保存しない。歌詞のコピーは先生の手）
@@ -73,6 +74,7 @@ class VowelMarkerApp:
         self.font_name = tk.StringVar(value=DEFAULT_FONT)
         self.font_size = tk.StringVar(value=str(DEFAULT_SIZE))
         self.out_name = tk.StringVar(value=DEFAULT_FILENAME)
+        self.sheet_title = tk.StringVar(value="")   # プリント上部の帯に出すタイトル（任意）
 
         # ライブラリ検索・ブラウザ検索用
         self.lib_filter = tk.StringVar()
@@ -227,9 +229,13 @@ class VowelMarkerApp:
         tk.Checkbutton(row2, text="y を母音として扱う",
                        variable=self.y_as_vowel).pack(side="left")
 
-        # 出力ファイル名
+        # タイトル・出力ファイル名
         row3 = tk.Frame(area)
         row3.grid(row=3, column=0, sticky="ew", pady=4)
+        tk.Label(row3, text="タイトル（任意）:").pack(side="left")
+        tk.Entry(row3, textvariable=self.sheet_title, width=28,
+                 background="white", foreground="black",
+                 insertbackground="black").pack(side="left", padx=(2, 16))
         tk.Label(row3, text="出力ファイル名:").pack(side="left")
         tk.Entry(row3, textvariable=self.out_name,
                  background="white", foreground="black",
@@ -243,6 +249,8 @@ class VowelMarkerApp:
                   command=self.on_preview).pack(side="left")
         tk.Button(row4, text="docx を生成", command=self.on_generate,
                   font=("", 11, "bold")).pack(side="left", padx=8)
+        tk.Button(row4, text="PDF を生成", command=self.on_generate_pdf,
+                  font=("", 11, "bold")).pack(side="left")
 
         # プレビュー
         tk.Label(area, text="プレビュー（赤字対象を [ ] で表示）",
@@ -278,6 +286,7 @@ class VowelMarkerApp:
             return
         self.input_text.delete("1.0", "end")
         self.input_text.insert("1.0", song["text"])
+        self.sheet_title.set(song["title"])
         self.on_preview()
 
     def on_browser_search(self):
@@ -327,18 +336,32 @@ class VowelMarkerApp:
         self.preview.configure(state="disabled")
 
     def on_generate(self):
+        self._generate("docx")
+
+    def on_generate_pdf(self):
+        self._generate("pdf")
+
+    def _show_missing_package(self, package):
+        cmd = '"{}" -m pip install {}'.format(sys.executable, package)
+        messagebox.showerror(
+            "{} が見つかりません".format(package),
+            "{} が未インストールです。\n".format(package) +
+            "下のコマンドを「そのまま」ターミナルに貼り付けて実行してください\n"
+            "（今アプリを動かしている Python に入れる必要があります）:\n\n"
+            + cmd +
+            "\n\nインストール後、アプリを開き直してください。",
+        )
+
+    def _generate(self, kind):
+        """kind = "docx" / "pdf"。どちらも同じデザイン・同じオプションで書き出す。"""
+        substitute = None
         try:
-            from docx_writer import write_docx
+            if kind == "pdf":
+                from pdf_writer import write_pdf as writer, font_substitute
+            else:
+                from docx_writer import write_docx as writer
         except ImportError:
-            cmd = '"{}" -m pip install python-docx'.format(sys.executable)
-            messagebox.showerror(
-                "python-docx が見つかりません",
-                "python-docx が未インストールです。\n"
-                "下のコマンドを「そのまま」ターミナルに貼り付けて実行してください\n"
-                "（今アプリを動かしている Python に入れる必要があります）:\n\n"
-                + cmd +
-                "\n\nインストール後、アプリを開き直してください。",
-            )
+            self._show_missing_package("reportlab" if kind == "pdf" else "python-docx")
             return
 
         text = self.input_text.get("1.0", "end-1c")
@@ -350,39 +373,58 @@ class VowelMarkerApp:
         if size is None:
             return
 
+        ext = "." + kind
         filename = self.out_name.get().strip() or DEFAULT_FILENAME
-        if not filename.lower().endswith(".docx"):
-            filename += ".docx"
+        stem, current_ext = os.path.splitext(filename)
+        if current_ext.lower() in (".docx", ".pdf"):
+            filename = stem + ext
+        elif not filename.lower().endswith(ext):
+            filename += ext
 
+        label = "PDF" if kind == "pdf" else "docx"
         filepath = filedialog.asksaveasfilename(
-            title="docx の保存先",
-            defaultextension=".docx",
+            title="{} の保存先".format(label),
+            defaultextension=ext,
             initialfile=filename,
-            filetypes=[("Word document", "*.docx")],
+            filetypes=[("PDF", "*.pdf")] if kind == "pdf" else [("Word document", "*.docx")],
         )
         if not filepath:
             return
 
+        font_name = self.font_name.get().strip() or DEFAULT_FONT
         try:
-            write_docx(
+            writer(
                 text,
                 filepath,
-                font_name=self.font_name.get().strip() or DEFAULT_FONT,
+                font_name=font_name,
                 font_size=size,
+                title=self.sheet_title.get().strip(),
                 **self._opts(),
             )
+            if kind == "pdf":
+                substitute = font_substitute(font_name)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("生成に失敗しました", str(exc))
             return
 
+        if kind == "pdf":
+            note = (
+                "※ 完全自動ではありません。歌では音符割りと発音がずれることがあります。\n"
+                "  PDF は赤字を後から直せないため、直したいときは docx を生成して\n"
+                "  Word で修正し、Word から PDF に書き出してください。"
+            )
+            if substitute:
+                note += "\n\n※ PDF ではフォント「{}」が見つからなかったため、{} で作成しました。".format(
+                    font_name, substitute)
+        else:
+            note = (
+                "※ 完全自動ではありません。歌では音符割りと発音がずれることがあります。\n"
+                "  最後に先生が耳で確認し、Word 上で赤字を微修正してください。"
+            )
         messagebox.showinfo(
             "完了",
-            "docx を生成しました。\n\n{}\n\n"
-            "※ 完全自動ではありません。歌では音符割りと発音がずれることがあります。\n"
-            "  最後に先生が耳で確認し、Word 上で赤字を微修正してください。"
-            .format(os.path.basename(filepath)),
+            "{} を生成しました。\n\n{}\n\n{}".format(label, os.path.basename(filepath), note),
         )
-
 
 def main():
     root = tk.Tk()

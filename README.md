@@ -3,7 +3,12 @@
 > 2026-09-24: SSOT運用へ移行しました。今後の作業場所・同期・検証手順は [docs/SSOT.md](docs/SSOT.md) を参照してください。元のアプリ本体は保持しています。
 
 英語テキストを入力すると、**発音上の母音核（声を乗せるべき母音）にあたる文字だけを赤字**にした
-Word（.docx）ファイルを生成する、ローカルGUIアプリです。
+Word（.docx）ファイルや PDF を生成する、ローカルGUIアプリです。
+
+プリントは A4 縦で、Word と PDF は同じデザインです。各ページの上部に紺の見出し帯（タイトル）と
+黄色のアクセント線、凡例「● 赤い文字に声をのせて読もう（例 make）」と なまえ欄、
+下部にページ番号「1 / 2」が入ります。本文は空行で区切られた連ごとに、左へ淡い縦線が付きます。
+装飾には赤系の色を使いません（赤＝声をのせる母音、という意味を保つため）。
 
 ## このツールの目的
 
@@ -15,13 +20,15 @@ Word（.docx）ファイルを生成する、ローカルGUIアプリです。
 - `magic e` / `silent e` のように **綴りにはあるが読まない文字は赤字にしません**。
 - 日本語・カタカナ・括弧・句読点・記号・改行はできるだけそのまま保持します。
 
-> **このプロジェクトでは既存楽曲の歌詞本文は扱いません。**
-> ユーザーが自分で入力した英文を、ローカルで処理するだけの汎用ツールです。
+> **このリポジトリには既存楽曲の歌詞本文を含めません（内蔵曲は伝承曲のみ）。**
+> 利用者が自分で用意した（権利処理済みの）歌詞を入力し、ローカルで処理する汎用ツールです。
+> 実際に歌う曲で使うことが本来の目的です（Swift版の設計: [docs/LYRICS_MELODY_DESIGN.md](docs/LYRICS_MELODY_DESIGN.md)）。
 
 ## 必要なもの
 
 - Python 3
 - [python-docx](https://python-docx.readthedocs.io/)（.docx 出力に必須）
+- [reportlab](https://www.reportlab.com/)（PDF 出力に必須）
 - tkinter（Python 標準。GUI 用）
 
 ## インストール
@@ -41,7 +48,7 @@ pip install -r requirements.txt
 
 Finder で **`起動.command`** をダブルクリックすると GUI が開きます。
 このランチャーはプロジェクト内の仮想環境 `.venv`（Homebrew Python ＝ 新しい Tk 9.0 ベース）を
-使います。`.venv` が無ければ自動で作成し python-docx も入れてから起動します。
+使います。`.venv` が無ければ自動で作成し python-docx と reportlab も入れてから起動します。
 （初回に「開発元を確認できません」と出た場合は、ファイルを右クリック →「開く」を選びます。）
 
 ### ターミナルから
@@ -55,7 +62,7 @@ cd /Users/ryon/Projects-Ishibashi/syllables-finder
 
 ```bash
 /opt/homebrew/bin/python3 -m venv .venv
-.venv/bin/python -m pip install python-docx
+.venv/bin/python -m pip install python-docx reportlab
 ```
 
 > 注意: Apple 標準の `/usr/bin/python3` は **Tk 8.5 が古く**、macOS のダークモードで
@@ -64,7 +71,7 @@ cd /Users/ryon/Projects-Ishibashi/syllables-finder
 
 GUI が開きます。
 
-### テキストを貼り付けて docx を生成する流れ
+### テキストを貼り付けて docx / PDF を生成する流れ
 
 1. **大きな入力欄** に英語テキストを貼り付け（複数行・歌やチャンツの改行もそのまま保持されます）。
 2. **オプション** を必要に応じて調整。
@@ -73,11 +80,20 @@ GUI が開きます。
    - 例外辞書を使う（デフォルト オン）
    - silent e を赤字にしない（デフォルト オン）
    - y を母音として扱う（デフォルト オン）
-3. **出力ファイル名** を入力（デフォルト `red_vowel_output.docx`）。
+3. **タイトル（任意）** と **出力ファイル名** を入力（デフォルト `red_vowel_output.docx`）。
+   - タイトルは見出し帯に出ます。空欄なら「Let's Read & Sing!」。ライブラリの曲を読み込むと曲名が入ります。
 4. **プレビュー** ボタンで、赤字対象を角括弧 `[ ]` で囲んだ簡易表示を確認。
    例: `make a dream` → `m[a]ke [a] dr[ea]m`
 5. **docx を生成** ボタンで保存先を選び、Word ファイルを書き出します。
+   **PDF を生成** ボタンなら、同じデザインの PDF を書き出します（拡張子は自動で `.pdf` になります）。
 6. 完了メッセージが出ます。
+
+> PDF の赤字は後から直せません。赤字を直したいときは docx を生成して Word で修正し、
+> Word から PDF に書き出してください。
+>
+> PDF のフォント: 欧文は指定フォントを macOS のフォントフォルダから探して埋め込みます
+> （見つからなければ Arial で代用し、完了メッセージでお知らせします）。日本語は Word 付属の
+> 游ゴシック、無ければ Arial Unicode MS を使います。
 
 ### コマンドラインだけで確認したいとき
 
@@ -123,7 +139,9 @@ python3 test_vowel_marker.py
 | `vowel_marker.py` | 中心ロジック。`mark_vowel_nuclei()` ほか、行・テキスト処理 |
 | `exception_dictionary.py` | 例外辞書 `EXCEPTIONS` |
 | `pd_songs.py` | 著作権フリー（PD）の歌・チャンツ ライブラリ `SONGS` |
+| `sheet_design.py` | プリントのデザイン定義（用紙・色・文言。Word と PDF で共通） |
 | `docx_writer.py` | python-docx による .docx 書き出し |
+| `pdf_writer.py` | reportlab による PDF 書き出し（Word と同じデザイン） |
 | `test_vowel_marker.py` | 品質確認テスト |
 | `requirements.txt` | 依存パッケージ |
 
@@ -214,3 +232,18 @@ index の数え方（`journey` の例）:
 6. `ing` の `i` は赤字。
 7. 短縮形（`we'll, don't, it's, let's, I'll`）もある程度扱う。
 8. 数字・日本語・カタカナは自動で赤字化しない。
+
+## 新しい歌唱発音ワークスペース（開発中）
+
+英語の発音は同梱辞書を優先します。既存曲は「読む → 英語の発音を整える」で修正できます。
+手修正や音符対応の扱い、カタカナの基準は[英語の発音・カタカナ候補](docs/ENGLISH_PRONUNCIATION.md)を参照してください。
+
+別途用意した歌詞から `.songproj` を作るコマンドとローカルJSON APIは[歌詞から曲ファイルを作るローカルAPI](docs/SONG_GENERATION_API.md)に記載しています。
+
+SwiftUIで作る新アプリの基盤は [`native/`](native/) にあります。現行の母音核教材アプリは上記の方法で引き続き起動できます。新アプリの設計正本は [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) から始まる8文書、進捗と検証結果は [`docs/WORK_LOG.md`](docs/WORK_LOG.md) です。
+
+macOSの開発用実行は `native/新アプリを起動.command` をダブルクリックします。Command Line ToolsとSwift 6が必要です。シェルからは `native/scripts/build-app.sh`、`native/scripts/swift-tool.sh test` を使います。新規文書の「サンプルを表示」から、10言語の伝承歌・童謡など13曲を選べます。言語名は一覧と歌詞画面に表示します。新しい8曲は[資料と収録範囲](docs/TRADITIONAL_SAMPLES.md)を記録した歌詞のみの読解サンプルです。自分の歌詞も追加できます。`.songproj`を保存すると言語と音楽の編集内容が残ります。開発用のサンプル文書が必要なら `native/scripts/swift-tool.sh build` の後に、ビルドされた `SongSampleTool /tmp/Practice.songproj`、`SongSampleTool --twinkle /tmp/Twinkle.songproj`、または `SongSampleTool --sample sakura /tmp/Sakura.songproj` で生成できます。きらきら星には `source/Twinkle.mid` を同梱します。既存ファイルは上書きしません。
+
+現在動く範囲はReading、歌詞と音符の対応表示、音節の対応変更、音符の基本数値編集、単旋律のガイド音再生、Mock意味解析とOllamaへの任意接続です。歌唱画面には複数小節の一覧と2小節の詳細、鍵盤付きピアノロール/単旋律五線、曲通し/範囲再生を追加しました。五線には拍子と休符を表示し、歌唱段にはフレーズ訳を表示します。きらきら星は12小節・6行・42音節を42音符へ対応させた第1節で、IPAとカタカナ読みも含みます。ツールバーの「印刷用に書き出す」から、A4のWordまたはPDF練習シートを保存できます。シートには原文・訳・語の意味・IPA・カタカナ読みを載せます。現段階の印刷シートには五線譜を載せていません。歌声合成、一般的なMIDI/MusicXML入出力、Apple Foundation Models、cloud AIはまだ実装していません。Ollamaは利用者がローカルで起動し、明示してモデルを選んだときだけ利用します。UIから有料APIは呼び出しません。実装の確認結果と残りは[作業記録](docs/WORK_LOG.md)に記録しました。
+
+「きらきら星」の歌詞はJane Taylor『The Star』（1806）、旋律は伝承曲『Ah! vous dirai-je, maman』に由来します。[1806年版の所蔵情報](https://www.themorgan.org/music-manuscripts-and-printed-music/85839)、[1840年の歌詞付き楽譜](https://imslp.org/wiki/The_Little_Songster_(Webb,_George_James))を確認しました。MIDIは外部ファイルの転載ではなく、このアプリの音符データから生成します。
