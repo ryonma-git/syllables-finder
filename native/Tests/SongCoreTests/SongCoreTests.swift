@@ -53,9 +53,10 @@ struct SongCoreTests {
             #expect(song == entry.make())
             #expect(!song.phrases.isEmpty)
             #expect(song.metadata.sourceLanguage == entry.languageCode)
-            if ["twinkle", "mary", "frere", "ninth", "entchen", "pollitos", "martino", "adeste",
-                "birch", "sakura", "arirang", "jasmine"].contains(entry.id) {
-                #expect(song.syllables.allSatisfy { !$0.reading.value.isEmpty && !$0.ipa.value.isEmpty })
+            #expect(song.syllables.allSatisfy { !$0.reading.value.isEmpty && !$0.ipa.value.isEmpty })
+            if ["mountain", "cuckoo", "clarinet", "marseillaise", "gloria", "kalinka",
+                "korobeiniki", "week", "danny", "auld"].contains(entry.id) {
+                #expect(song.words.allSatisfy { !$0.contextualMeaning.value.isEmpty })
             }
             #expect(!song.music.events.isEmpty)
             if SourceMelodies.scores[entry.id] != nil {

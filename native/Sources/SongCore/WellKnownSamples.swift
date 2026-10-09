@@ -56,7 +56,8 @@ enum WellKnownSamples {
     private static func make(_ item: Item) -> SongDocument {
         let words = Syllabifier.tokenize(item.lyric, language: item.language).map { token in
             let candidate = Syllabifier.syllabify(token, language: item.language)
-            let sounds = candidate.syllables.enumerated().map { index, syllable in
+            let syllables = correctedSyllables(candidate.syllables, word: token.surface, sample: item.id)
+            let sounds = syllables.enumerated().map { index, syllable in
                 SampleCatalog.SyllableSpec(syllable, "", candidate.readings?[safe: index] ?? "")
             }
             return SampleCatalog.WordSpec(token.surface, "", sounds)
@@ -64,11 +65,24 @@ enum WellKnownSamples {
         let line = SampleCatalog.LineSpec(text: item.lyric, translation: item.translation,
                                           words: words, pitches: [], durations: [])
         var base = SampleCatalog.makeSong(title: item.title, language: item.language,
-                                          notes: "原語詞の冒頭のみ。音節は規則による候補です。",
+                                          notes: "原語詞の冒頭のみ。音節は規則を基に確認した練習用の分割です。",
                                           bpm: 96, serialStart: item.serial, withMusic: false, lines: [line])
         base.metadata.notes = base.metadata.notes.replacingOccurrences(
-            of: "読みとIPAは練習用の近似です。", with: "発音記号とカタカナは未入力です。")
+            of: "読みとIPAは練習用の近似です。", with: "発音記号とカタカナは練習用の近似です。")
+        WellKnownAnnotations.apply(to: &base, sample: item.id)
         return SourceMelodies.attaching(item.id, to: base)
+    }
+
+    private static func correctedSyllables(_ candidate: [String], word: String, sample: String) -> [String] {
+        switch (sample, word) {
+        case ("clarinet", "clarinette."): ["cla", "ri", "nette"]
+        case ("marseillaise", "gloire"): ["gloire"]
+        case ("gloria", "anges"): ["anges"]
+        case ("gloria", "campagnes"): ["cam", "pagnes"]
+        case ("gloria", "l'hymne"): ["l'hymne"]
+        case ("korobeiniki", "Ой,"): ["Ой"]
+        default: candidate
+        }
     }
 }
 
