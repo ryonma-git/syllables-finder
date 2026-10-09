@@ -62,7 +62,7 @@ extension SongDocument {
         if language != metadata.sourceLanguage { phrase.language = language }
         for token in Syllabifier.tokenize(text, language: language) {
             var word = Word(parentPhraseID: phrase.id, surface: token.surface)
-            fill(&word, with: Syllabifier.syllabify(token, language: language))
+            fill(&word, with: Syllabifier.syllabify(token, language: language), language: language)
             phrase.wordIDs.append(word.id); words.append(word)
         }
         if sections.isEmpty { sections.append(.init(title: "歌詞")) }
@@ -70,13 +70,20 @@ extension SongDocument {
         return phrase.id
     }
 
-    private mutating func fill(_ word: inout Word, with result: SyllabifiedWord) {
+    private mutating func fill(_ word: inout Word, with result: SyllabifiedWord, language: String) {
         let rule = FieldSource(.rule, provider: "Syllabifier")
+        let pronunciation = EnglishPronunciation.supports(language)
+            ? EnglishPronunciation.candidate(for: word.surface, texts: result.syllables) : nil
         for (index, text) in result.syllables.enumerated() {
             var syllable = Syllable(parentWordID: word.id, text: text)
             syllable.text.source = rule
             if let reading = result.readings?[index] { syllable.reading = .init(reading, source: rule) }
             if index == result.stressIndex { syllable.stress = .init("強", source: rule) }
+            if let pronunciation {
+                syllable.ipa = .init(pronunciation.ipa[index], source: EnglishPronunciation.source)
+                syllable.reading = .init(pronunciation.readings[index], source: EnglishPronunciation.source)
+                syllable.stress = .init(index == pronunciation.stressIndex ? "強" : "", source: EnglishPronunciation.source)
+            }
             word.syllableIDs.append(syllable.id); syllables.append(syllable)
         }
         if let note = result.note, !word.notes.userEdited { word.notes = .init(note, source: rule) }
@@ -116,7 +123,7 @@ extension SongDocument {
         removeSyllables(words[index].syllableIDs)
         words[index].syllableIDs = []
         var word = words[index]
-        fill(&word, with: Syllabifier.syllabify(word.surface, language: language))
+        fill(&word, with: Syllabifier.syllabify(word.surface, language: language), language: language)
         words[index] = word
     }
 
@@ -129,7 +136,7 @@ extension SongDocument {
         for id in phrase.wordIDs {
             guard let index = words.firstIndex(where: { $0.id == id }), words[index].syllableIDs.isEmpty else { continue }
             var word = words[index]
-            fill(&word, with: Syllabifier.syllabify(word.surface, language: language))
+            fill(&word, with: Syllabifier.syllabify(word.surface, language: language), language: language)
             words[index] = word
             count += word.syllableIDs.isEmpty ? 0 : 1
         }

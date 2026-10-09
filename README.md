@@ -235,6 +235,9 @@ index の数え方（`journey` の例）:
 
 ## 新しい歌唱発音ワークスペース（開発中）
 
+英語の発音は同梱辞書を優先します。既存曲は「読む → 英語の発音を整える」で修正できます。
+手修正や音符対応の扱い、カタカナの基準は[英語の発音・カタカナ候補](docs/ENGLISH_PRONUNCIATION.md)を参照してください。
+
 別途用意した歌詞から `.songproj` を作るコマンドとローカルJSON APIは[歌詞から曲ファイルを作るローカルAPI](docs/SONG_GENERATION_API.md)に記載しています。
 
 SwiftUIで作る新アプリの基盤は [`native/`](native/) にあります。現行の母音核教材アプリは上記の方法で引き続き起動できます。新アプリの設計正本は [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) から始まる8文書、進捗と検証結果は [`docs/WORK_LOG.md`](docs/WORK_LOG.md) です。

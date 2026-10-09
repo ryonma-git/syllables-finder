@@ -8,6 +8,8 @@ struct ReadingView: View {
     @ObservedObject var preferences: DisplayPreferences
     let mutate: SongMutation
     @Environment(\.openSettings) private var openSettings
+    @State private var pronunciationReport: EnglishPronunciation.Report?
+    @State private var pronunciationPendingRevision: UInt64?
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -23,6 +25,14 @@ struct ReadingView: View {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 18) { displayOptions }
                         VStack(alignment: .leading, spacing: 8) { displayOptions }
+                    }
+                    if let report = pronunciationReport, pronunciationPendingRevision == nil {
+                        Text("英語の発音：\(report.changedWords)語を更新・手修正を\(report.protectedWords)語で保持・要確認\(report.reviewWords)語")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if !report.reviewSurfaces.isEmpty {
+                            Text("確認する語：" + report.reviewSurfaces.prefix(12).joined(separator: "、"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     if NinthPronunciation.isAvailable(in: song) {
                         Text("劇ドイツ語：語尾の r も発音（Brüder＝ブリューデル）。手修正した発音は保持します。")
@@ -62,7 +72,13 @@ struct ReadingView: View {
                 if let id { withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .top) } }
             }
             .onChange(of: song.id) { _, _ in
+                pronunciationReport = nil; pronunciationPendingRevision = nil
                 if let first = song.phrases.first { proxy.scrollTo(first.id, anchor: .top) }
+            }
+            .onChange(of: song.revision) { _, revision in
+                // Once the repair commits, retain its report until another edit or undo.
+                if pronunciationPendingRevision != revision { pronunciationReport = nil }
+                pronunciationPendingRevision = nil
             }
             .onAppear {
                 if let first = song.phrases.first { proxy.scrollTo(first.id, anchor: .top) }
@@ -73,6 +89,16 @@ struct ReadingView: View {
     @ViewBuilder
     private var displayOptions: some View {
         Button("表示順の詳細設定…", systemImage: "line.3.horizontal") { openSettings() }
+        if song.phrases.contains(where: { EnglishPronunciation.supports(song.language(of: $0)) }) {
+            Button("英語の発音を整える", systemImage: "character.book.closed") {
+                mutate("英語の発音を整える") {
+                    let report = EnglishPronunciation.apply(to: &$0)
+                    pronunciationReport = report
+                    pronunciationPendingRevision = report.changedWords > 0 ? $0.revision &+ 1 : nil
+                }
+            }
+            .help("米語の発音辞書とカタカナ表記の基準を適用します。手修正と音符の対応は保持し、取り消しもできます。")
+        }
         if NinthPronunciation.isAvailable(in: song) {
             Picker("第九の発音", selection: Binding(
                 get: { song.metadata.ninthPronunciation ?? .standard },

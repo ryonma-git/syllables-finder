@@ -24,7 +24,7 @@ public struct LyricToken: Sendable, Equatable {
     public init(surface: String, reading: String? = nil) { self.surface = surface; self.reading = reading }
 }
 
-/// Rule-based, dictionary-free syllabification for lyric entry (ADR013). Results are candidates.
+/// Written syllable candidates for lyric entry (ADR013), with English spelling exceptions.
 public enum Syllabifier {
     public struct Language: Sendable, Identifiable, Hashable {
         public let id: String
@@ -251,6 +251,9 @@ public enum Syllabifier {
     }
 
     private static func alphabeticPart(_ core: String, language: String) -> SyllabifiedWord {
+        if language == "en", let parts = EnglishPronunciation.spelling(for: core) {
+            return .init(syllables: parts, stressIndex: core.lowercased().hasPrefix("creat") ? 1 : nil)
+        }
         var letters = letters(core)
         let (nuclei, note) = orthographicNuclei(in: &letters, language: language)
         let n = letters.count
@@ -325,6 +328,13 @@ public enum Syllabifier {
                 if language == "it" && base == "i" && i > 1 && previous == "c" && letters[i - 2].base == "s" && nextIsVowel {
                     letters[i].vowel = false // scia
                 }
+                // The i in the common -tion ending belongs to the consonant, not a new vowel.
+                // "cation" is an exception (cat-i-on); creation's e-a hiatus is handled below.
+                if language == "en", base == "i", previous == "t",
+                   ["ion", "ions"].contains(String(letters[i...].map(\.base))),
+                   !["cation", "cations"].contains(String(letters.map(\.base))) {
+                    letters[i].vowel = false
+                }
             case "la":
                 if base == "u" && (previous == "q" || (previous == "g" && i > 1 && letters[i - 2].base == "n")) && nextIsVowel { letters[i].vowel = false }
                 if (base == "i" || base == "j") && nextIsVowel && (i == 0 || letters[i - 1].vowel) { letters[i].vowel = false } // iam, eius
@@ -389,6 +399,7 @@ public enum Syllabifier {
         case "la":
             return ["ae", "oe", "au"].contains(pair) && next - start == 1
         case "en":
+            if pair == "ea", start == 2, EnglishPronunciation.spelling(for: String(letters.map(\.base))) != nil { return false }
             if next - start >= 2 { return ["eau", "iew"].contains(run) }
             return ["ai", "ay", "ea", "ee", "ei", "ey", "ie", "oa", "oe", "oi", "oo", "ou", "ow", "oy", "ue", "ui", "au", "aw", "ew", "uy", "eu"].contains(pair)
         default:

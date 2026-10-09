@@ -16,7 +16,7 @@ let package = Package(
         .executable(name: "SingingWorkspace", targets: ["SingingWorkspace"])
     ],
     targets: [
-        .target(name: "SongCore"),
+        .target(name: "SongCore", resources: [.copy("Resources/CMUDict")]),
         .target(name: "SongServices", dependencies: ["SongCore"]),
         .target(name: "SongPrint", dependencies: ["SongCore"]),
         .target(name: "SongNotation", dependencies: ["SongCore"]),
