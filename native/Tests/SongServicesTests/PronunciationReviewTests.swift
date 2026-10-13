@@ -75,21 +75,50 @@ struct PronunciationReviewTests {
         #expect(ReviewStub.state.lock.withLock { ReviewStub.state.models } == ["reviewer"])
         #expect(results.values.first?.verdict == .review)
         #expect(results.values.first?.expectedIPA == "frɒm")
+        #expect(results.values.first?.kind == .differentModel)
         #expect(original == baseline)
     }
-    @Test @MainActor func oneModelAndUnknownProvenanceCannotPretendIndependentReview() async throws {
-        let session = session { _ in Issue.record("No model should be called"); throw URLError(.badURL) }
+    @Test @MainActor func oneModelRechecksWithoutPretendingIndependentReview() async throws {
+        let session = session { try Self.response($0) }
         defer { session.invalidateAndCancel() }
-        for original in [song(), song(source: .init(.ai))] {
+        for (original, kind) in [(song(), PronunciationReview.ReviewKind.sameModel), (song(source: .init(.ai)), .unknownOrigin)] {
+            let baseline = original
             var results: [UUID: PronunciationReview.Result] = [:]
             try await PronunciationReview.run(document: original, clients: [.init(.ollama("generator"), session: session)],
                 update: { results[$0] = $1 }, progress: { _ in })
-            #expect(results.values.first?.verdict == .uncertain)
-            #expect(results.values.first?.reviewer == "AI未検証")
+            #expect(results.values.first?.verdict == .review)
+            #expect(results.values.first?.reviewer == "Ollama · generator")
+            #expect(results.values.first?.kind == kind)
+            #expect(original == baseline)
         }
+        #expect(ReviewStub.state.lock.withLock { ReviewStub.state.models } == ["generator", "generator"])
         let entry = PronunciationAudit.entries(in: song())[0]
         var config = APIModelConfiguration(); config.model = "generator:latest"
-        #expect(!PronunciationReview.canIndependentlyReview(entry, with: .init(.api(config, key: "fake"))))
+        #expect(PronunciationReview.reviewKind(entry, with: .init(.api(config, key: "fake"))) == .sameModel)
+        let appleEntry = PronunciationAudit.entries(in: song(source: .init(.ai, provider: "Apple Foundation Models", model: "system-default")))[0]
+        #expect(PronunciationReview.reviewKind(appleEntry, with: .init(.apple)) == .sameModel)
+    }
+    @Test @MainActor func failedAlternativeFallsBackToGeneratorAndStillKeepsDictionaryConcerns() async throws {
+        for offline in [false, true] {
+            let session = session { request in
+                let model = try Self.body(request)["model"] as? String
+                if offline, model == "other" { throw URLError(.cannotConnectToHost) }
+                return try Self.response(request, verdict: "ok", expected: "fraɪm", invalidIDs: model == "other")
+            }; defer { session.invalidateAndCancel() }
+            var results: [UUID: PronunciationReview.Result] = [:]
+            try await PronunciationReview.run(document: song(), clients: ["generator", "other"].map { .init(.ollama($0), session: session) },
+                update: { results[$0] = $1 }, progress: { _ in })
+            #expect(results.values.first?.reviewer == "Ollama · generator")
+            #expect(results.values.first?.kind == .sameModel)
+            #expect(results.values.first?.verdict == .review)
+            #expect(ReviewStub.state.lock.withLock { ReviewStub.state.models } == (offline ? ["generator"] : ["other", "generator"]))
+        }
+    }
+    @Test @MainActor func noModelsRemainsUnverified() async throws {
+        var results: [UUID: PronunciationReview.Result] = [:]
+        try await PronunciationReview.run(document: song(), clients: [], update: { results[$0] = $1 }, progress: { _ in })
+        #expect(results.values.first?.kind == .unverified)
+        #expect(results.values.first?.verdict == .uncertain)
     }
     @Test @MainActor func modelOKCannotEraseDictionaryOrKanaMismatch() async throws {
         let original = song()
@@ -100,7 +129,7 @@ struct PronunciationReviewTests {
         #expect(result.values.first?.verdict == .review)
         #expect(!entries[0].issues.isEmpty)
     }
-    @Test @MainActor func invalidOutputFallsBackButNeverToGenerator() async throws {
+    @Test @MainActor func invalidOutputTriesAllAlternativesBeforeGenerator() async throws {
         let session = session { request in
             let body = try Self.body(request)
             return try Self.response(request, invalidIDs: body["model"] as? String == "bad")

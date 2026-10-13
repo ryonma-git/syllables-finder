@@ -31,7 +31,7 @@ struct PronunciationReviewSheet: View {
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Picker("検証用AI", selection: $selection) {
-                    Text("別モデルを自動選択").tag("automatic")
+                    Text("自動（別モデル優先）").tag("automatic")
                     Text("辞書のみ").tag("dictionary")
                     ForEach(clients, id: \.label) { client in
                         Text(client.label).tag(PronunciationReview.selectionID(client))
@@ -45,7 +45,7 @@ struct PronunciationReviewSheet: View {
                     .disabled(runID != nil || scanning || selectedClients.isEmpty || entries.isEmpty)
                     .buttonStyle(.borderedProminent)
             }
-            Text("生成用AIの設定は変わりません。生成元と同じモデルは除外します。別モデルの回答も正しさの保証ではなく、録音との照合は行いません。")
+            Text("生成用AIの設定は変わりません。自動では別モデルを優先し、使えなければ同じモデルで再確認します。AIの回答は正しさの保証ではなく、録音との照合は行いません。")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("\(song.metadata.englishPronunciationStyle.label) · 辞書一致 \(entries.filter { $0.status == .matched }.count)語 / 要確認・未照合 \(entries.filter { $0.status != .matched }.count)語")
@@ -78,7 +78,7 @@ struct PronunciationReviewSheet: View {
                                 Text("発音の生成元：" + (sources.isEmpty ? "辞書・手入力など（AI生成元の記録なし）" : sources.joined(separator: "、")))
                                     .font(.caption).foregroundStyle(.secondary)
                                 if let result = results[entry.id] {
-                                    Text("\(result.reviewer) · \(verdictLabel(result.verdict))").font(.callout.bold())
+                                    Text("\(result.reviewer) · \(result.kind.label) · \(verdictLabel(result.verdict))").font(.callout.bold())
                                     Text(result.explanation).font(.callout).textSelection(.enabled)
                                     if !result.expectedIPA.isEmpty {
                                         Text("AIの発音候補：\(result.expectedIPA)").font(.callout).textSelection(.enabled)

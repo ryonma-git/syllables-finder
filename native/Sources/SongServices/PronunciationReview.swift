@@ -1,14 +1,27 @@
 import Foundation
 import SongCore
 
-/// Independent second-pass suggestions. Never writes to the document or suppresses dictionary findings.
+/// Second-pass suggestions, preferring a different model when available. Never writes to the document or suppresses dictionary findings.
 public enum PronunciationReview {
+    public enum ReviewKind: Sendable {
+        case differentModel, sameModel, unknownOrigin, noAIGenerator, unverified
+        public var label: String {
+            switch self {
+            case .differentModel: "別モデルで検証"
+            case .sameModel: "同じモデルで再確認"
+            case .unknownOrigin: "生成元不明のため独立性は未確認"
+            case .noAIGenerator: "辞書・手入力の確認"
+            case .unverified: "未検証"
+            }
+        }
+    }
     public struct Result: Sendable {
         public enum Verdict: String, Codable, Sendable { case ok, review, uncertain }
         public let verdict: Verdict
         public let explanation: String
         public let expectedIPA: String
         public let reviewer: String
+        public let kind: ReviewKind
     }
     public static func selectionID(_ client: ModelClient) -> String {
         switch client.backend {
@@ -21,15 +34,27 @@ public enum PronunciationReview {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return value.hasSuffix(":latest") ? String(value.dropLast(7)) : value
     }
-    public static func canIndependentlyReview(_ entry: PronunciationAudit.Entry, with client: ModelClient) -> Bool {
-        entry.aiSources.allSatisfy { source in
-            guard let provider = source.provider, ["Apple Foundation Models", "Ollama", "OpenAI-compatible"].contains(provider), let model = source.model, !model.isEmpty else { return false }
-            if provider == "Apple Foundation Models" {
-                if case .apple = client.backend { return false }
-                return true
+    public static func reviewKind(_ entry: PronunciationAudit.Entry, with client: ModelClient) -> ReviewKind {
+        guard !entry.aiSources.isEmpty else { return .noAIGenerator }
+        var unknown = false
+        for source in entry.aiSources {
+            guard let provider = source.provider, ["Apple Foundation Models", "Ollama", "OpenAI-compatible"].contains(provider),
+                  let model = source.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                unknown = true; continue
             }
-            // Do not silently call the same model through a different API transport.
-            return modelKey(model) != modelKey(client.source.model ?? "")
+            if provider == "Apple Foundation Models" {
+                if case .apple = client.backend { return .sameModel }
+            } else if modelKey(model) == modelKey(client.source.model ?? "") {
+                // A different transport does not make the same model independent.
+                return .sameModel
+            }
+        }
+        return unknown ? .unknownOrigin : .differentModel
+    }
+    public static func canIndependentlyReview(_ entry: PronunciationAudit.Entry, with client: ModelClient) -> Bool {
+        switch reviewKind(entry, with: client) {
+        case .differentModel, .noAIGenerator: true
+        default: false
         }
     }
 
@@ -59,9 +84,9 @@ public enum PronunciationReview {
         Data(#"{"type":"object","additionalProperties":false,"required":["words"],"properties":{"words":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["id","verdict","explanation","expectedIPA"],"properties":{"id":{"type":"integer"},"verdict":{"type":"string"},"explanation":{"type":"string"},"expectedIPA":{"type":"string"}}}}}}"#.utf8)
     }
     public static func check(_ entries: [PronunciationAudit.Entry], language: String, style: EnglishPronunciationStyle,
-                             client: ModelClient) async throws -> [UUID: Result] {
+                             client: ModelClient, allowNonIndependent: Bool = false) async throws -> [UUID: Result] {
         guard !entries.isEmpty else { return [:] }
-        guard entries.allSatisfy({ canIndependentlyReview($0, with: client) }),
+        guard (allowNonIndependent || entries.allSatisfy({ canIndependentlyReview($0, with: client) })),
               Set(entries.map(\.phraseID)).count == 1 else {
             throw ProviderError.unavailable("生成元と異なるAIで、同じ行の単語を確認してください。")
         }
@@ -103,12 +128,12 @@ public enum PronunciationReview {
                     explanation = "AIは問題なしと回答しましたが、辞書・現在のIPA・読みとの相違が残っています。" + reason
                 }
             }
-            result[entry.id] = Result(verdict: verdict, explanation: explanation, expectedIPA: expected, reviewer: client.label)
+            result[entry.id] = Result(verdict: verdict, explanation: explanation, expectedIPA: expected, reviewer: client.label, kind: reviewKind(entry, with: client))
         }
         return result
     }
 
-    /// Each batch is one phrase and one eligible reviewer. Failures may try another distinct model.
+    /// Try distinct models first. Only still-pending words fall back to their generator or unknown provenance.
     @MainActor
     public static func run(document: SongDocument, clients: [ModelClient],
                            update: (UUID, Result) -> Void, progress: (String) -> Void) async throws {
@@ -117,34 +142,34 @@ public enum PronunciationReview {
         for (lineIndex, phrase) in document.phrases.enumerated() {
             var pending = entries.filter { $0.phraseID == phrase.id }
             var failures: [UUID: String] = [:]
-            for client in clients where !unavailable.contains(selectionID(client)) {
-                let eligible = pending.filter { canIndependentlyReview($0, with: client) }
-                for offset in stride(from: 0, to: eligible.count, by: 8) {
-                    try Task.checkCancellation()
-                    let batch = Array(eligible[offset..<min(offset + 8, eligible.count)])
-                    progress("AIで確認中 \(lineIndex + 1)/\(document.phrases.count)行 · \(client.label)")
-                    do {
-                        let checked = try await check(batch, language: document.language(of: phrase), style: document.metadata.englishPronunciationStyle, client: client)
+            for fallback in [false, true] {
+                for client in clients where !unavailable.contains(selectionID(client)) {
+                    let eligible = pending.filter { canIndependentlyReview($0, with: client) != fallback }
+                    for offset in stride(from: 0, to: eligible.count, by: 8) {
                         try Task.checkCancellation()
-                        for (id, result) in checked { update(id, result) }
-                        pending.removeAll { checked[$0.id] != nil }
-                    } catch is CancellationError { throw CancellationError() }
-                    catch {
-                        for entry in batch { failures[entry.id] = "\(client.label)：検証できませんでした（\(error.localizedDescription)）" }
-                        if error is URLError || (error as? ProviderError).map({
-                            if case .unavailable = $0 { return true }; return false
-                        }) == true {
-                            unavailable.insert(selectionID(client)); break
+                        let batch = Array(eligible[offset..<min(offset + 8, eligible.count)])
+                        progress("AIで確認中 \(lineIndex + 1)/\(document.phrases.count)行 · \(client.label)")
+                        do {
+                            let checked = try await check(batch, language: document.language(of: phrase), style: document.metadata.englishPronunciationStyle, client: client, allowNonIndependent: fallback)
+                            try Task.checkCancellation()
+                            for (id, result) in checked { update(id, result) }
+                            pending.removeAll { checked[$0.id] != nil }
+                        } catch is CancellationError { throw CancellationError() }
+                        catch {
+                            for entry in batch { failures[entry.id] = "\(client.label)：検証できませんでした（\(error.localizedDescription)）" }
+                            if error is URLError || (error as? ProviderError).map({
+                                if case .unavailable = $0 { return true }; return false
+                            }) == true {
+                                unavailable.insert(selectionID(client)); break
+                            }
                         }
                     }
                 }
             }
             for entry in pending {
                 try Task.checkCancellation()
-                let reason = failures[entry.id] ?? (entry.aiSources.contains { $0.model?.isEmpty != false || $0.provider?.isEmpty != false }
-                    ? "生成元のAIが不明なため、別モデルかどうかを確認できません。"
-                    : "生成元と異なる、利用可能な検証AIがありません。")
-                update(entry.id, Result(verdict: .uncertain, explanation: reason, expectedIPA: "", reviewer: "AI未検証"))
+                let reason = failures[entry.id] ?? "利用可能な検証AIがありません。"
+                update(entry.id, Result(verdict: .uncertain, explanation: reason, expectedIPA: "", reviewer: "AI未検証", kind: .unverified))
             }
         }
     }
