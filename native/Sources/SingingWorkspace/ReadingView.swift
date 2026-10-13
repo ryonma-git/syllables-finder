@@ -8,6 +8,7 @@ struct ReadingView: View {
     @ObservedObject var preferences: DisplayPreferences
     let completePronunciation: () -> Void
     let completeMeanings: () -> Void
+    let checkPronunciation: () -> Void
     let pronunciationRunning: Bool
     let mutate: SongMutation
     @Environment(\.openSettings) private var openSettings
@@ -114,6 +115,9 @@ struct ReadingView: View {
             }
             .help("選んだ発音基準の辞書とカタカナ表記を適用します。手修正と音符の対応は保持し、取り消しもできます。")
         }
+        Button("発音をチェック…", systemImage: "checkmark.magnifyingglass", action: checkPronunciation)
+            .disabled(pronunciationRunning)
+            .help("辞書との相違とIPA・カタカナの整合性を確認します。生成とは別のAIでも検証できます。読みは変更しません。")
         Button("未設定の発音を補完", systemImage: "sparkles", action: completePronunciation)
             .disabled(pronunciationRunning)
             .help("辞書を適用し、AI接続の設定に従って未設定のIPA・カタカナを補完します。手修正は保持します。")

@@ -71,6 +71,7 @@ struct WorkspaceView: View {
     @StateObject private var session = WorkspaceSession()
     @EnvironmentObject private var modelSettings: ModelSettings
     @State private var showingModels = false
+    @State private var showingPronunciationCheck = false
     @EnvironmentObject private var displayPreferences: DisplayPreferences
     @Environment(\.undoManager) private var undoManager
     @State private var addingLyrics = false
@@ -118,6 +119,7 @@ struct WorkspaceView: View {
                                 ReadingView(song: song, session: session, preferences: displayPreferences,
                                             completePronunciation: { completeAnnotations(song.phrases.map(\.id), meanings: false) },
                                             completeMeanings: { completeAnnotations(song.phrases.map(\.id), pronunciation: false) },
+                                            checkPronunciation: { showingPronunciationCheck = true },
                                             pronunciationRunning: pronunciationRun != nil, mutate: mutate)
                             } else {
                                 phraseHeader(phrase)
@@ -238,6 +240,12 @@ struct WorkspaceView: View {
             if let manager = notification.object as? UndoManager, manager === undoManager { stopPronunciation() }
         }
         .onDisappear { stopPlayback(); stopPronunciation() }
+        .sheet(isPresented: $showingPronunciationCheck) {
+            PronunciationReviewSheet(song: song, settings: modelSettings) { entry in
+                session.phraseID = entry.phraseID; session.wordID = entry.id; session.showInspector = true
+                showingPronunciationCheck = false
+            }
+        }
         .sheet(isPresented: $showingModels) { ModelConnectionSheet(settings: modelSettings) }
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
         .sheet(isPresented: $showingSamples) { samplePicker }

@@ -22,6 +22,24 @@ final class ModelSettings: ObservableObject {
         defaults.set(try JSONEncoder().encode(preferences), forKey: storageKey)
         self.preferences = preferences
     }
+    /// Verification has its own selection; only the already-authorized API is exposed.
+    func reviewClients() async -> [ModelClient] {
+        let config = preferences
+        let models = Array(Set((try? await OllamaProvider.models()) ?? []))
+        var clients: [ModelClient] = ModelClient.appleAvailability.available ? [.init(.apple)] : []
+        let preferred = PronunciationCompletion.model(from: models)
+        let ordered = models.sorted { left, right in
+            if left == right { return false }
+            if left == preferred { return true }; if right == preferred { return false }
+            return left < right
+        }
+        clients += ordered.map { ModelClient(.ollama($0)) }
+        if config.api.enabled, !config.api.model.isEmpty,
+           let key = try? ModelKeychain.read(account: config.api.baseURL), !key.isEmpty {
+            clients.append(ModelClient(.api(config.api, key: key)))
+        }
+        return clients
+    }
     func clients() async -> [ModelClient] {
         let config = preferences
         let key = config.api.enabled ? (try? ModelKeychain.read(account: config.api.baseURL)) ?? "" : ""
