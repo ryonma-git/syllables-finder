@@ -3,6 +3,16 @@ import Testing
 @testable import SongServices
 
 struct ModelRuntimeTests {
+    @Test func meaningPriorityUsesOptionalQwenAndHonorsExplicitPreference() {
+        let apple = ModelClient(.apple)
+        let qwen = ModelClient(.ollama("qwen3.5:9b"))
+        let api = ModelClient(.api(.init(), key: ""))
+        let clients = [apple, qwen, api]
+        #expect(ModelDiscovery.forMeanings(clients, mode: .automatic).map(\.label) == [qwen, apple, api].map(\.label))
+        #expect(ModelDiscovery.forMeanings([apple, api], mode: .automatic).map(\.label) == [apple, api].map(\.label))
+        #expect(ModelDiscovery.forMeanings([api, apple, qwen], mode: .api).map(\.label) == [api, apple, qwen].map(\.label))
+    }
+
     @Test func apiEndpointsRequireTLSExceptLoopbackAndRejectEmbeddedSecrets() throws {
         var config = APIModelConfiguration()
         #expect(try config.endpoint().absoluteString == "https://api.openai.com/v1/chat/completions")

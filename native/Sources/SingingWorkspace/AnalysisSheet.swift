@@ -39,7 +39,11 @@ struct AnalysisSheet: View {
             .sheet(isPresented: $showingModels, onDismiss: { task = Task { await refresh() } }) { ModelConnectionSheet(settings: modelSettings) }
             .onDisappear { task?.cancel() }
     }
-    @MainActor private func refresh() async { working = true; clients = await modelSettings.clients(); working = false }
+    @MainActor private func refresh() async {
+        working = true
+        clients = ModelDiscovery.forMeanings(await modelSettings.clients(), mode: modelSettings.preferences.mode)
+        working = false
+    }
     private func analyze() {
         let request = LinguisticAnalysisRequest(document: song, phrase: phrase)
         working = true

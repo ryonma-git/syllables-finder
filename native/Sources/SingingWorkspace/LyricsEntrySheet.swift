@@ -43,8 +43,8 @@ struct LyricsEntrySheet: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(height: 70)
             }
-            if splitSyllables {
-                Text("追加後の発音補完：\(method)。手修正は保持します。")
+            Group {
+                Text("追加後に意味・訳" + (splitSyllables ? "・発音" : "") + "を補完：\(method)。手修正は保持します。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()

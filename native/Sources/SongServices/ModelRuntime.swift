@@ -25,7 +25,7 @@ public struct ModelPreferences: Codable, Sendable, Equatable {
         case automatic, local, api, dictionary
         public var label: String {
             switch self {
-            case .automatic: "自動（AppleFM優先）"
+            case .automatic: "自動（AppleFM・Qwen）"
             case .local: "ローカルLLM優先"
             case .api: "API優先"
             case .dictionary: "辞書のみ"
@@ -167,6 +167,17 @@ private final class NoModelRedirect: NSObject, URLSessionTaskDelegate, @unchecke
 }
 
 public enum ModelDiscovery {
+    /// Short Japanese glosses were more reliable with the installed Qwen 3.5 in local checks.
+    /// Keep explicit user priorities, and retain AppleFM when that optional model is absent.
+    public static func forMeanings(_ clients: [ModelClient], mode: ModelPreferences.Mode) -> [ModelClient] {
+        guard mode == .automatic else { return clients }
+        func preferred(_ client: ModelClient) -> Bool {
+            if case .ollama(let model) = client.backend { return model.lowercased().hasPrefix("qwen3.5:") }
+            return false
+        }
+        return clients.filter(preferred) + clients.filter { !preferred($0) }
+    }
+
     public static func clients(preferences: ModelPreferences, apiKey: String, session: URLSession = .shared) async -> [ModelClient] {
         guard preferences.mode != .dictionary else { return [] }
         let models = (try? await OllamaProvider.models(session: session)) ?? []

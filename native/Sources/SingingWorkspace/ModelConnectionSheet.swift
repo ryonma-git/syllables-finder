@@ -25,7 +25,7 @@ struct ModelConnectionSheet: View {
                     Picker("優先する方法", selection: $draft.mode) {
                         ForEach(ModelPreferences.Mode.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
-                    Text("自動ではAppleFM → ローカルLLM → 許可したAPIの順で補完します。結果を検証できない場合は次の方法を試します。")
+                    Text("自動では発音はAppleFM優先、意味・訳は導入済みQwen 3.5を優先します。使えない場合は他のローカルAI、送信を許可したAPIの順で試します。")
                         .font(.caption).foregroundStyle(.secondary)
                     GroupBox("AppleFM · このMacのApple Intelligence") {
                         VStack(alignment: .leading, spacing: 8) {
