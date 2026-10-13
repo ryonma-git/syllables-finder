@@ -72,7 +72,7 @@ struct SongGenerateTool {
                 }
                 fputs("Annotated line \(index + 1)/\(song.phrases.count)\n", stderr)
             }
-            song.metadata.notes += " 日本語訳・語義はローカルOllama（\(model)）の候補。英語のIPAはCMUdictを優先し、辞書外の語などは同モデルで補完。カタカナは歌唱補助用の近似表記です。"
+            song.metadata.notes += " 日本語訳・語義はローカルOllama（\(model)）の候補。英語のIPAは\(song.metadata.englishPronunciationStyle.label)の内蔵辞書を優先し、辞書外の語などは同モデルで補完。カタカナは歌唱補助用の近似表記です。"
         }
 
         guard !isOccupied(output) else {

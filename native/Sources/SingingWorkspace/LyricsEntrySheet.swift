@@ -6,6 +6,8 @@ import SongCore
 struct LyricsEntrySheet: View {
     @Binding var input: String
     @Binding var language: String
+    @Binding var englishStyle: EnglishPronunciationStyle
+    let canChooseEnglishStyle: Bool
     @Binding var splitSyllables: Bool
     let method: String
     let cancel: () -> Void
@@ -28,6 +30,15 @@ struct LyricsEntrySheet: View {
                     ForEach(Syllabifier.languages) { Text($0.name).tag($0.id) }
                 }.frame(width: 235)
                 Toggle("音節に分ける", isOn: $splitSyllables).toggleStyle(.checkbox)
+            }
+            if EnglishPronunciation.supports(language) {
+                HStack {
+                    Picker("英語の発音", selection: $englishStyle) {
+                        ForEach(EnglishPronunciationStyle.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }.frame(width: 235).disabled(!canChooseEnglishStyle)
+                    Text(canChooseEnglishStyle ? "曲に保存します" : "変更は「読む」画面で行えます")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             TextEditor(text: $input)
                 .font(.body).frame(minHeight: 100, maxHeight: .infinity)

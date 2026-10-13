@@ -73,16 +73,16 @@ extension SongDocument {
     private mutating func fill(_ word: inout Word, with result: SyllabifiedWord, language: String) {
         let rule = FieldSource(.rule, provider: "Syllabifier")
         let pronunciation = EnglishPronunciation.supports(language)
-            ? EnglishPronunciation.candidate(for: word.surface, texts: result.syllables) : nil
+            ? EnglishPronunciation.candidate(for: word.surface, texts: result.syllables, style: metadata.englishPronunciationStyle) : nil
         for (index, text) in result.syllables.enumerated() {
             var syllable = Syllable(parentWordID: word.id, text: text)
             syllable.text.source = rule
             if let reading = result.readings?[index] { syllable.reading = .init(reading, source: rule) }
             if index == result.stressIndex { syllable.stress = .init("強", source: rule) }
             if let pronunciation {
-                syllable.ipa = .init(pronunciation.ipa[index], source: EnglishPronunciation.source)
-                syllable.reading = .init(pronunciation.readings[index], source: EnglishPronunciation.source)
-                syllable.stress = .init(index == pronunciation.stressIndex ? "強" : "", source: EnglishPronunciation.source)
+                syllable.ipa = .init(pronunciation.ipa[index], source: EnglishPronunciation.source(for: metadata.englishPronunciationStyle))
+                syllable.reading = .init(pronunciation.readings[index], source: EnglishPronunciation.source(for: metadata.englishPronunciationStyle))
+                syllable.stress = .init(index == pronunciation.stressIndex ? "強" : "", source: EnglishPronunciation.source(for: metadata.englishPronunciationStyle))
             }
             word.syllableIDs.append(syllable.id); syllables.append(syllable)
         }

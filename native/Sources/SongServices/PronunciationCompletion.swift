@@ -27,6 +27,8 @@ public struct PronunciationCompletion: Sendable {
     public static func merge(_ result: SongDocument, from original: SongDocument,
                              phraseID: UUID, into song: inout SongDocument) {
         guard song.id == original.id, result.id == original.id,
+              song.metadata.englishPronunciationStyle == original.metadata.englishPronunciationStyle,
+              result.metadata.englishPronunciationStyle == original.metadata.englishPronunciationStyle,
               let before = original.phrase(phraseID), let current = song.phrase(phraseID),
               before.originalText == current.originalText, before.wordIDs == current.wordIDs,
               original.language(of: before) == song.language(of: current) else { return }

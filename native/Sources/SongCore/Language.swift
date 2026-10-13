@@ -38,6 +38,9 @@ public struct SongMetadata: Codable, Equatable, Sendable {
     public var notes = ""
     /// Optional for documents saved before the Ninth pronunciation selector existed.
     public var ninthPronunciation: NinthPronunciation?
+    /// Missing in legacy documents: retain the previous American dictionary behavior.
+    public var englishPronunciation: EnglishPronunciationStyle?
+    public var englishPronunciationStyle: EnglishPronunciationStyle { englishPronunciation ?? .american }
     public init(title: String = "名称未設定", sourceLanguage: String = "en") {
         self.title = title; self.sourceLanguage = sourceLanguage
     }

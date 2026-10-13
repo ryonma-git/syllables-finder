@@ -211,6 +211,60 @@ struct PronunciationTests {
         #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 1)
     }
 
+    @Test func britishRequestNamesAccentAndRejectsRhoticGOATAndUnsupportedPhones() async throws {
+        for badIPA in ["ɡoʊ", "kɑr", "ɝ", "ɡɐ"] {
+            var song = SongDocument()
+            song.metadata.englishPronunciation = .british
+            song.appendPhrase(text: "Zog", language: "en", syllabify: true)
+            let session = session { request in
+                let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+                let messages = body["messages"] as! [[String: String]]
+                #expect(messages[0]["content"]!.contains("British English"))
+                let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+                #expect(input["englishAccent"] as? String == "british")
+                return try Self.response(input: input["words"] as! [[String: Any]], wordIPA: badIPA, syllableIPA: badIPA, reading: "ゴウ")
+            }
+            defer { session.invalidateAndCancel() }
+            do {
+                _ = try await OllamaPronunciationProvider(model: "test", session: session).annotate(phrase: song.phrases[0], in: song)
+                Issue.record("Wrong accent or unsupported IPA accepted: \(badIPA)")
+            } catch { #expect(error is ProviderError) }
+        }
+    }
+
+    @Test func modelKanaCannotContradictBritishIPA() async throws {
+        var song = SongDocument()
+        song.metadata.englishPronunciation = .british
+        song.appendPhrase(text: "Zog", language: "en", syllabify: true)
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let messages = body["messages"] as! [[String: String]]
+            let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+            return try Self.response(input: input["words"] as! [[String: Any]], wordIPA: "zɒɡ", syllableIPA: "zɒɡ", reading: "ザグ")
+        }
+        defer { session.invalidateAndCancel() }
+        let result = try await OllamaPronunciationProvider(model: "test", session: session).annotate(phrase: song.phrases[0], in: song)
+        #expect(result.syllables[0].ipa.value == "zɒɡ")
+        #expect(result.syllables[0].reading.value == "ゾッグ")
+    }
+
+    @Test func wholeWordLengthMismatchIsRejected() async throws {
+        var song = SongDocument()
+        song.metadata.englishPronunciation = .british
+        song.appendPhrase(text: "Zog", language: "en", syllabify: true)
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let messages = body["messages"] as! [[String: String]]
+            let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+            return try Self.response(input: input["words"] as! [[String: Any]], wordIPA: "zɔːɡ", syllableIPA: "zɔɡ", reading: "ゾーグ")
+        }
+        defer { session.invalidateAndCancel() }
+        do {
+            _ = try await OllamaPronunciationProvider(model: "test", session: session).annotate(phrase: song.phrases[0], in: song)
+            Issue.record("Length mismatch accepted")
+        } catch { #expect(error is ProviderError) }
+    }
+
     private static func body(_ request: URLRequest) throws -> Data {
         if let body = request.httpBody { return body }
         let stream = try #require(request.httpBodyStream)

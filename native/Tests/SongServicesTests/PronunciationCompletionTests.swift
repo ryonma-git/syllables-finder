@@ -43,6 +43,37 @@ struct PronunciationCompletionTests {
         #expect(current == other)
     }
 
+    @Test func accentChangedWhileModelWasRunningRejectsStaleResult() {
+        var original = SongDocument()
+        original.appendPhrase(text: "wind", language: "en", syllabify: true)
+        var result = original
+        result.syllables[0].ipa = .init("wɪnd", source: .init(.ai))
+        result.syllables[0].reading = .init("ウィンド", source: .init(.ai))
+        var current = original
+        current.metadata.englishPronunciation = .british
+        let before = current
+        PronunciationCompletion.merge(result, from: original, phraseID: original.phrases[0].id, into: &current)
+        #expect(current == before)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SINGING_TEST_LOCAL_QWEN"] == "1"))
+    @MainActor func liveBritishCompletionUsesChosenAccent() async throws {
+        var song = SongDocument()
+        song.metadata.englishPronunciation = .british
+        song.appendPhrase(text: "The stone glows.", language: "en", syllabify: true)
+        let original = song
+        let ids = song.phrases.map(\.id)
+        let clients = await ModelDiscovery.clients(preferences: ModelPreferences(), apiKey: "")
+        try await PronunciationCompletion().run(phraseIDs: ids, clients: clients, current: { song }, apply: { result, snapshot, id in
+            PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
+        }, progress: { print($0) })
+        #expect(PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids)).isEmpty)
+        #expect(EnglishPronunciation.phoneticKey(song.syllables[1].ipa.value) == "stəʊn")
+        #expect(EnglishPronunciation.phoneticKey(song.syllables[2].ipa.value) == "ɡləʊz")
+        #expect(song.syllables.map(\.id) == original.syllables.map(\.id))
+        try song.validate()
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SINGING_TEST_LOCAL_QWEN"] == "1"))
     @MainActor func liveNativeFirstRoutingCompletesSyntheticInput() async throws {
         var song = SongDocument()

@@ -93,6 +93,18 @@ struct ReadingView: View {
     private var displayOptions: some View {
         Button("表示順の詳細設定…", systemImage: "line.3.horizontal") { openSettings() }
         if song.phrases.contains(where: { EnglishPronunciation.supports(song.language(of: $0)) }) {
+            Picker("英語の発音", selection: Binding(
+                get: { song.metadata.englishPronunciationStyle },
+                set: { style in
+                    mutate("英語の発音基準を変更") {
+                        pronunciationReport = EnglishPronunciationStyle.apply(style, to: &$0)
+                        pronunciationPendingRevision = $0.revision &+ 1
+                    }
+                }
+            )) {
+                ForEach(EnglishPronunciationStyle.allCases, id: \.self) { Text($0.label).tag($0) }
+            }.frame(width: 190).disabled(pronunciationRunning)
+                .help("曲全体の英語の発音基準。手修正は保持します。辞書にない語は未設定になり、AIで補完できます。カタカナは近似です。")
             Button("英語の発音を整える", systemImage: "character.book.closed") {
                 mutate("英語の発音を整える") {
                     let report = EnglishPronunciation.apply(to: &$0)
@@ -100,7 +112,7 @@ struct ReadingView: View {
                     pronunciationPendingRevision = report.changedWords > 0 ? $0.revision &+ 1 : nil
                 }
             }
-            .help("米語の発音辞書とカタカナ表記の基準を適用します。手修正と音符の対応は保持し、取り消しもできます。")
+            .help("選んだ発音基準の辞書とカタカナ表記を適用します。手修正と音符の対応は保持し、取り消しもできます。")
         }
         Button("未設定の発音を補完", systemImage: "sparkles", action: completePronunciation)
             .disabled(pronunciationRunning)

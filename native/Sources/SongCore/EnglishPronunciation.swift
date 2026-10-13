@@ -1,6 +1,6 @@
 import Foundation
 
-/// Offline US English pronunciations. Spelling, phonemes and singing groups are kept separate.
+/// Accent-specific offline English pronunciations. Spelling, phonemes and singing groups are kept separate.
 /// CMUdict supplies whole-word phones; syllable boundaries and kana are reviewable app rules.
 public enum EnglishPronunciation {
     public struct Candidate: Sendable, Equatable {
@@ -22,6 +22,10 @@ public enum EnglishPronunciation {
     }
 
     public static let source = FieldSource(.dictionary, provider: "CMUdict + EnglishPronunciation")
+
+    public static func source(for style: EnglishPronunciationStyle) -> FieldSource {
+        style == .american ? source : .init(.dictionary, provider: "British citation forms + EnglishPronunciation")
+    }
 
     // Keep the distributable dictionary intact, including its licence and pinned revision.
     private static let dictionary: [String: [String]] = {
@@ -137,11 +141,24 @@ public enum EnglishPronunciation {
     public static func comparableIPA(_ text: String) -> String {
         text.replacingOccurrences(of: "ɹ", with: "r").replacingOccurrences(of: "ɚ", with: "ər")
             .replacingOccurrences(of: "ɝ", with: "ɜr").replacingOccurrences(of: "g", with: "ɡ")
-            .replacingOccurrences(of: "ɒ", with: "ɑ")
             .filter { !"/[]ˈˌː:.·> \n\t".contains($0) }
     }
 
-    public static func candidates(for surface: String, texts: [String]) -> [Candidate] {
+    /// Compare actual vowel qualities and lengths; ignore only notation and stress boundaries.
+    public static func phoneticKey(_ text: String) -> String {
+        text.replacingOccurrences(of: "ɹ", with: "r").replacingOccurrences(of: "g", with: "ɡ")
+            .filter { !"/[]ˈˌ.· \n\t".contains($0) }
+    }
+
+    public static func candidates(for surface: String, texts: [String], style: EnglishPronunciationStyle = .american) -> [Candidate] {
+        if style == .british {
+            return BritishPronunciationLexicon.forms(for: surface).compactMap { parts in
+                guard parts.count == texts.count else { return nil }
+                let readings = parts.compactMap { reading(forIPA: $0) }
+                guard readings.count == parts.count else { return nil }
+                return Candidate(ipa: parts, readings: readings, stressIndex: parts.firstIndex { $0.contains("ˈ") })
+            }
+        }
         let word = key(surface)
         var result: [Candidate] = []
         for phones in phones(for: surface) {
@@ -162,8 +179,9 @@ public enum EnglishPronunciation {
         return result
     }
 
-    public static func dictionaryIPA(for surface: String) -> [String] {
-        phones(for: surface).map { splitPhones($0).map(ipa).joined() }
+    public static func dictionaryIPA(for surface: String, style: EnglishPronunciationStyle = .american) -> [String] {
+        if style == .british { return BritishPronunciationLexicon.forms(for: surface).map { $0.joined() } }
+        return phones(for: surface).map { splitPhones($0).map(ipa).joined() }
     }
 
     /// Used only while creating syllables, never to resize an existing saved word.
@@ -175,10 +193,10 @@ public enum EnglishPronunciation {
     /// aid by the same phone-based rules as the dictionary instead of accepting that mismatch.
     public static func reading(forIPA value: String) -> String? {
         var text = value.filter { !"/[]ˈˌ .·\n\t".contains($0) }
-        let tokens = ["aɪ": "AY1", "aʊ": "AW1", "eɪ": "EY1", "oʊ": "OW1", "ɔɪ": "OY1",
-                      "tʃ": "CH", "dʒ": "JH", "ɜːr": "ER1", "ɚ": "ER0", "ɝ": "ER1",
-                      "iː": "IY1", "uː": "UW1", "ɑː": "AA1", "aː": "AA1", "ɔː": "AO1", "oː": "AO1",
-                      "ɑ": "AA1", "ɒ": "AA1", "a": "AA1", "æ": "AE1", "ɔ": "AO1", "ɛ": "EH1", "e": "EH1",
+        let tokens = ["aɪ": "AY1", "aʊ": "AW1", "eɪ": "EY1", "oʊ": "OW1", "əʊ": "OW1", "ɪə": "IE1", "eə": "EA1", "ʊə": "UA1", "ɔɪ": "OY1",
+                      "tʃ": "CH", "dʒ": "JH", "ɜːr": "ER1", "ɜː": "ER1", "ɚ": "ER0", "ɝ": "ER1",
+                      "iː": "IY1", "uː": "UW1", "ɑː": "AAL1", "aː": "AAL1", "ɔː": "AO1", "oː": "AO1",
+                      "ɑ": "AA1", "ɒ": "LOT1", "a": "AA1", "æ": "AE1", "ɔ": "AO1", "ɛ": "EH1", "e": "EH1",
                       "ɪ": "IH1", "i": "IY0", "ʊ": "UH1", "u": "UW0", "ə": "AH0", "ʌ": "AH1", "o": "OW1",
                       "p": "P", "b": "B", "t": "T", "d": "D", "k": "K", "ɡ": "G", "g": "G", "f": "F", "v": "V",
                       "θ": "TH", "ð": "DH", "s": "S", "z": "Z", "ʃ": "SH", "ʒ": "ZH", "h": "HH", "m": "M",
@@ -195,24 +213,26 @@ public enum EnglishPronunciation {
 
     /// Homographs need context. Retain a matching pronunciation; otherwise only auto-select
     /// when the dictionary has one vowel sequence (or a specified common function-word form).
-    public static func candidate(for surface: String, texts: [String], currentIPA: [String] = []) -> Candidate? {
-        let candidates = candidates(for: surface, texts: texts)
-        if let matching = candidates.first(where: { comparableIPA($0.ipa.joined()) == comparableIPA(currentIPA.joined()) }) {
+    public static func candidate(for surface: String, texts: [String], currentIPA: [String] = [], style: EnglishPronunciationStyle = .american) -> Candidate? {
+        let candidates = candidates(for: surface, texts: texts, style: style)
+        if let matching = candidates.first(where: { phoneticKey($0.ipa.joined()) == phoneticKey(currentIPA.joined()) }) {
             return matching
         }
-        let defaults: Set<String> = ["a", "are", "the", "for", "to", "of", "and", "that", "can", "been", "your", "you're"]
+        let defaults: Set<String> = ["a", "an", "are", "the", "for", "from", "to", "of", "and", "that", "can", "been", "your", "you're"]
         if defaults.contains(key(surface)) { return candidates.first }
-        let vowels = Set(candidates.map { comparableIPA($0.ipa.joined()).filter { "ɑæɔaʊɪɛeiouəʌɜ".contains($0) } })
+        let vowels = Set(candidates.map { comparableIPA($0.ipa.joined()).filter { "ɑɒæɔaʊɪɛeiouəʌɜ".contains($0) } })
         return vowels.count == 1 ? candidates.first : nil
     }
 
     /// Repair in place, preserving IDs, note links, manual fields and explicit phoneme/mora data.
     /// Never change the number of syllables in an existing document.
     @discardableResult
-    public static func apply(to song: inout SongDocument, phraseIDs: Set<UUID>? = nil) -> Report {
+    public static func apply(to song: inout SongDocument, phraseIDs: Set<UUID>? = nil, excludingWordIDs: Set<UUID> = []) -> Report {
+        let style = song.metadata.englishPronunciationStyle
+        let source = source(for: style)
         var report = Report()
         for phrase in song.phrases where supports(song.language(of: phrase)) && (phraseIDs?.contains(phrase.id) ?? true) {
-            for word in song.words(in: phrase) {
+            for word in song.words(in: phrase) where !excludingWordIDs.contains(word.id) {
                 let current = song.syllables(in: word)
                 guard !current.isEmpty else { report.review(word.surface); continue }
                 var texts = current.map(\.text.value)
@@ -238,7 +258,7 @@ public enum EnglishPronunciation {
                         }
                     }
                 }
-                guard let candidate = candidate(for: word.surface, texts: texts, currentIPA: current.map(\.ipa.value)) else {
+                guard let candidate = candidate(for: word.surface, texts: texts, currentIPA: current.map(\.ipa.value), style: style) else {
                     report.review(word.surface); continue
                 }
                 var changed = false, protected = false
@@ -257,7 +277,7 @@ public enum EnglishPronunciation {
                         song.syllables[index].ipa.accept(candidate.ipa[position], source: source)
                         song.syllables[index].reading.accept(candidate.readings[position], source: source)
                         song.syllables[index].stress.accept(position == candidate.stressIndex ? "強" : "", source: source)
-                    } else if comparableIPA(syllable.ipa.value) == comparableIPA(candidate.ipa[position]) {
+                    } else if phoneticKey(syllable.ipa.value) == phoneticKey(candidate.ipa[position]) {
                         song.syllables[index].reading.accept(candidate.readings[position], source: source)
                     }
                     changed = changed || song.syllables[index] != syllable
@@ -298,9 +318,9 @@ public enum EnglishPronunciation {
         if onset == ["CH"], phones[nucleus] == "AH0", tail == ["N"] { return "チョン" }
         if onset == ["ZH"], phones[nucleus] == "AH0", tail == ["N"] { return "ジョン" }
         let vowel = base(phones[nucleus])
-        let column = ["AA": 0, "AE": 0, "AH": 0, "AO": 4, "AW": 0, "AY": 0, "EH": 3, "ER": 0, "EY": 3,
+        let column = ["AA": 0, "AAL": 0, "LOT": 4, "IE": 1, "EA": 3, "UA": 2, "AE": 0, "AH": 0, "AO": 4, "AW": 0, "AY": 0, "EH": 3, "ER": 0, "EY": 3,
                       "IH": 1, "IY": 1, "OW": 4, "OY": 4, "UH": 2, "UW": 2][vowel] ?? 0
-        var suffix = ["AO": "ー", "AW": "ウ", "AY": "イ", "ER": "ー", "EY": "イ", "IY": "ー", "OW": "ウ", "OY": "イ", "UW": "ー"][vowel] ?? ""
+        var suffix = ["AAL": "ー", "IE": "ア", "EA": "ア", "UA": "ア", "AO": "ー", "AW": "ウ", "AY": "イ", "ER": "ー", "EY": "イ", "IY": "ー", "OW": "ウ", "OY": "イ", "UW": "ー"][vowel] ?? ""
         if ["IY0", "UW0"].contains(phones[nucleus]) { suffix = "" }
         if lengthened && suffix.isEmpty { suffix = "ー" }
         if tail.first == "R", ["AA", "AO", "AH", "IH", "IY", "EH", "UH", "UW"].contains(vowel) {
@@ -312,7 +332,7 @@ public enum EnglishPronunciation {
         let row = rows[onset.last ?? ""] ?? rows[""]!
         let head = vowel == "AE" && onset.last == "K" ? "キャ" : vowel == "AE" && onset.last == "G" ? "ギャ" : row[column]
         prefix += head + suffix
-        let shortVowel = ["AA", "AE", "AH", "EH", "IH", "UH"].contains(vowel) && suffix.isEmpty
+        let shortVowel = ["AA", "LOT", "AE", "AH", "EH", "IH", "UH"].contains(vowel) && suffix.isEmpty
         if geminate, shortVowel, let first = tail.first, ["P", "B", "T", "D", "K", "G", "CH", "SH"].contains(first) { prefix += "ッ" }
         if tail == ["T", "S"] { return prefix + "ツ" }
         return prefix + tail.map { coda[$0] ?? "" }.joined()

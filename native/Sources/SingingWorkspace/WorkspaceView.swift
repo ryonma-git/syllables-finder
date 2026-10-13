@@ -82,6 +82,7 @@ struct WorkspaceView: View {
     @State private var changingTempo = false
     @State private var input = ""
     @State private var inputLanguage = "en"
+    @State private var inputEnglishStyle: EnglishPronunciationStyle = .british
     @State private var splitSyllables = true
     @State private var pronunciationTask: Task<Void, Never>?
     @State private var pronunciationRun: UUID?
@@ -477,19 +478,24 @@ struct WorkspaceView: View {
     }
 
     private var lyricsSheet: some View {
-        LyricsEntrySheet(input: $input, language: $inputLanguage, splitSyllables: $splitSyllables,
+        LyricsEntrySheet(input: $input, language: $inputLanguage, englishStyle: $inputEnglishStyle,
+                         canChooseEnglishStyle: song.phrases.isEmpty, splitSyllables: $splitSyllables,
                          method: modelSettings.preferences.mode.label,
                          cancel: { addingLyrics = false }, add: addLyrics)
             .onAppear {
                 let current = song.metadata.sourceLanguage
                 inputLanguage = Syllabifier.supports(current) ? current : "en"
+                inputEnglishStyle = song.phrases.isEmpty ? .british : song.metadata.englishPronunciationStyle
             }
     }
 
     private func addLyrics() {
         let previousIDs = Set(song.phrases.map(\.id))
         mutate("歌詞を追加") { doc in
-            if doc.phrases.isEmpty { doc.metadata.sourceLanguage = inputLanguage }
+            if doc.phrases.isEmpty {
+                doc.metadata.sourceLanguage = inputLanguage
+                doc.metadata.englishPronunciation = inputEnglishStyle
+            }
             for line in input.components(separatedBy: .newlines) {
                 doc.appendPhrase(text: line, language: inputLanguage, syllabify: splitSyllables)
             }

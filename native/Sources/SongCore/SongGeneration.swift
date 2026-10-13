@@ -7,14 +7,16 @@ public struct SongGenerationRequest: Codable, Sendable {
     public var lyrics: String
     public var sourceNote: String?
     public var sectionTitles: [String]?
+    public var englishPronunciation: EnglishPronunciationStyle?
 
     public init(title: String, sourceLanguage: String, lyrics: String,
-                sourceNote: String? = nil, sectionTitles: [String]? = nil) {
+                sourceNote: String? = nil, sectionTitles: [String]? = nil, englishPronunciation: EnglishPronunciationStyle? = nil) {
         self.title = title
         self.sourceLanguage = sourceLanguage
         self.lyrics = lyrics
         self.sourceNote = sourceNote
         self.sectionTitles = sectionTitles
+        self.englishPronunciation = englishPronunciation
     }
 
     public func makeDocument() throws -> SongDocument {
@@ -49,6 +51,7 @@ public struct SongGenerationRequest: Codable, Sendable {
 
         var song = SongDocument()
         song.metadata = SongMetadata(title: title, sourceLanguage: sourceLanguage)
+        song.metadata.englishPronunciation = englishPronunciation
         song.metadata.notes = [sourceNote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                                "歌詞は入力データから作成。音節は規則による候補です。音符は未入力。"]
             .filter { !$0.isEmpty }.joined(separator: " ")
