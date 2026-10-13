@@ -85,7 +85,7 @@ def make_handler(tool, output_dir, model):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--port", type=int, default=18765)
     parser.add_argument("--tool", type=Path, default=Path(__file__).resolve().parents[1] / ".build/debug/SongGenerateTool")
     parser.add_argument("--ollama-model", help="Optional local Ollama model for meaning and pronunciation candidates")
     args = parser.parse_args()

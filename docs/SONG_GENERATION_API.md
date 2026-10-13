@@ -37,12 +37,12 @@ native/scripts/swift-tool.sh build --product SongGenerateTool
   --ollama-model qwen3.5:9b
 ```
 
-サーバーはこのMacの `127.0.0.1:8765` にだけ待ち受けます。`POST /v1/song-projects` に上記JSONを送ると、作成した曲ファイルのパスと件数をJSONで返します。`fileName` を追加すると保存ファイル名を指定できます（フォルダ名は指定不可）。省略時は曲名から作ります。`GET /health` で待ち受けを確認できます。既存名は HTTP 409 で拒否します。歌詞や出力データをHTTPレスポンスに返したり、ログに残したりしません。
+サーバーはこのMacの `127.0.0.1:18765` にだけ待ち受けます（`--port` で変更できます）。`POST /v1/song-projects` に上記JSONを送ると、作成した曲ファイルのパスと件数をJSONで返します。`fileName` を追加すると保存ファイル名を指定できます（フォルダ名は指定不可）。省略時は曲名から作ります。`GET /health` で待ち受けを確認できます。既存名は HTTP 409 で拒否します。歌詞や出力データをHTTPレスポンスに返したり、ログに残したりしません。
 
 ```sh
 curl -H 'Content-Type: application/json' \
   --data-binary @/absolute/path/input.json \
-  http://127.0.0.1:8765/v1/song-projects
+  http://127.0.0.1:18765/v1/song-projects
 ```
 
 このAPIは個人用のローカル処理です。歌詞取得、配信、公開用の認証・権利処理は担当しません。生成した曲ファイルとPDF・Wordは `Documents/SingingWorkspaceExamples` 以下に置き、アプリのコードと内蔵サンプルはGitの作業コピーに置きます。両方の保存先は自動同期されません。
