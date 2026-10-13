@@ -7,38 +7,26 @@ struct AnalysisSheet: View {
     let phrase: Phrase
     let apply: (SongDocument) -> Void
     let currentSong: () -> SongDocument
+    @EnvironmentObject private var modelSettings: ModelSettings
     @Environment(\.dismiss) private var dismiss
-    @State private var providers: [any AIProvider] = [MockAIProvider()]
-    @State private var selected = "mock"
+    @State private var clients: [ModelClient] = []
+    @State private var selected = "automatic"
     @State private var status = "手修正した意味・全文訳は保持します。音節の分割は変更しません。"
     @State private var working = false
     @State private var task: Task<Void, Never>?
-    private func key(_ provider: any AIProvider) -> String { provider.id + (provider.source.model ?? "") }
+    @State private var showingModels = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             Label("意味を解析", systemImage: "sparkles").font(.title2.bold())
-            Text(phrase.originalText).font(.title3)
+            ScrollView { Text(phrase.originalText).font(.title3).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 100)
             Picker("解析方法", selection: $selected) {
-                ForEach(providers.indices, id: \.self) { index in
-                    let provider = providers[index]
-                    Text(provider.displayName + (provider.source.model.map { " · " + $0 } ?? "")).tag(key(provider))
-                }
+                Text("設定した優先順で自動").tag("automatic")
+                Text("Macの辞書で単語を調べる").tag("dictionary")
+                ForEach(clients.indices, id: \.self) { index in Text(clients[index].label).tag(clients[index].label) }
             }.disabled(working)
-            Button("このMacのOllamaモデルを確認") {
-                working = true
-                task = Task { @MainActor in
-                    defer { working = false }
-                    do {
-                        let models = try await OllamaProvider.models()
-                        try Task.checkCancellation()
-                        providers = [MockAIProvider()] + models.map { OllamaProvider(model: $0) as any AIProvider }
-                        selected = "mock"
-                        status = models.isEmpty ? "Ollamaにモデルがありません。モデルの追加はOllamaで行ってください。" : "モデルを選んで解析できます。歌詞はこのMacのOllamaに渡されます。"
-                    } catch is CancellationError { status = "キャンセルしました。" }
-                    catch { status = "Ollamaに接続できません。起動状態を確認してください。" }
-                }
-            }.disabled(working)
-            Text("対象は選択中のフレーズだけです。クラウドへの送信は行いません。").font(.caption).foregroundStyle(.secondary)
+            Button("AI接続と辞書の設定…") { showingModels = true }.disabled(working)
+            Text("対象は選択中の1行です。外部APIはAI接続で送信を許可した場合だけ使います。辞書モードでは全文訳は作成しません。")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if working { ProgressView().controlSize(.small) }
             Text(status).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -46,21 +34,47 @@ struct AnalysisSheet: View {
                 Spacer()
                 Button("解析して適用") { analyze() }.buttonStyle(.borderedProminent).disabled(working)
             }
-        }.padding(28).frame(width: 490).onDisappear { task?.cancel() }
+        }.padding(24).frame(width: 540)
+            .task { await refresh() }
+            .sheet(isPresented: $showingModels, onDismiss: { task = Task { await refresh() } }) { ModelConnectionSheet(settings: modelSettings) }
+            .onDisappear { task?.cancel() }
     }
+    @MainActor private func refresh() async { working = true; clients = await modelSettings.clients(); working = false }
     private func analyze() {
-        guard let provider = providers.first(where: { key($0) == selected }) else { return }
         let request = LinguisticAnalysisRequest(document: song, phrase: phrase)
         working = true
         task = Task { @MainActor in
             defer { working = false }
             do {
-                let analysis = try await provider.analyze(request: request)
-                try Task.checkCancellation()
-                let next = try LinguisticAnalysisService().apply(analysis, request: request, source: provider.source, to: currentSong())
-                apply(next); dismiss()
-            } catch is CancellationError { status = "キャンセルしました。" }
-            catch { status = error.localizedDescription }
+                let current = currentSong()
+                guard current.id == request.documentID, current.revision == request.revision else { throw SongError.staleAnalysis }
+                let candidates = selected == "automatic" ? clients : clients.filter { $0.label == selected }
+                if selected == "dictionary" || candidates.isEmpty {
+                    var count = 0
+                    let next = try current.editing { count = DictionaryLookup.apply(to: &$0, phraseIDs: [phrase.id]) }
+                    if count > 0 { apply(next); status = "\(count)語の辞書定義を追加しました。単語の詳細で確認できます。" }
+                    else { status = "追加できる辞書定義がありません。Macの辞書の有効状態を確認してください。" }
+                    return
+                }
+                var failure: Error = ProviderError.unavailable("利用できるAIがありません。")
+                for client in candidates {
+                    do {
+                        status = client.label + "で解析中…"
+                        let provider = ModelAnalysisProvider(client: client)
+                        let analysis = try await provider.analyze(request: request)
+                        try Task.checkCancellation()
+                        let next = try LinguisticAnalysisService().apply(analysis, request: request, source: provider.source, to: currentSong())
+                        apply(next); dismiss(); return
+                    } catch is CancellationError { throw CancellationError() }
+                    catch { failure = error }
+                }
+                let latest = currentSong()
+                guard latest.id == request.documentID, latest.revision == request.revision else { throw SongError.staleAnalysis }
+                var count = 0
+                let next = try latest.editing { count = DictionaryLookup.apply(to: &$0, phraseIDs: [phrase.id]) }
+                if count > 0 { apply(next) }
+                status = "AIで解析できなかったため、辞書定義を\(count)語追加しました。全文訳は変更していません。" + failure.localizedDescription
+            } catch { status = Task.isCancelled ? "キャンセルしました。" : error.localizedDescription }
         }
     }
 }

@@ -6,6 +6,8 @@ struct ReadingView: View {
     let song: SongDocument
     @ObservedObject var session: WorkspaceSession
     @ObservedObject var preferences: DisplayPreferences
+    let completePronunciation: () -> Void
+    let pronunciationRunning: Bool
     let mutate: SongMutation
     @Environment(\.openSettings) private var openSettings
     @State private var pronunciationReport: EnglishPronunciation.Report?
@@ -99,6 +101,9 @@ struct ReadingView: View {
             }
             .help("米語の発音辞書とカタカナ表記の基準を適用します。手修正と音符の対応は保持し、取り消しもできます。")
         }
+        Button("未設定の発音を補完", systemImage: "sparkles", action: completePronunciation)
+            .disabled(pronunciationRunning)
+            .help("辞書を適用し、AI接続の設定に従って未設定のIPA・カタカナを補完します。手修正は保持します。")
         if NinthPronunciation.isAvailable(in: song) {
             Picker("第九の発音", selection: Binding(
                 get: { song.metadata.ninthPronunciation ?? .standard },

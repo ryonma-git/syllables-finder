@@ -20,12 +20,14 @@ struct SongFile: FileDocument {
 
 @main
 struct SingingWorkspaceApp: App {
+    @StateObject private var modelSettings = ModelSettings()
     @StateObject private var displayPreferences = DisplayPreferences()
 
     var body: some Scene {
         DocumentGroup(newDocument: SongFile()) { configuration in
             WorkspaceView(file: configuration.$document)
                 .environmentObject(displayPreferences)
+                .environmentObject(modelSettings)
         }
         .defaultSize(width: 1180, height: 790)
 

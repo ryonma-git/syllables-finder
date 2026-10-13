@@ -3,6 +3,16 @@ import Testing
 import SongCore
 
 struct EnglishPronunciationTests {
+    @Test func newInputUsesDictionaryCountForAdjacentVowelHiatus() {
+        #expect(EnglishPronunciation.reading(forIPA: "raː") == "ラー")
+        #expect(EnglishPronunciation.reading(forIPA: "wɪnd") == "ウィンド")
+        #expect(Syllabifier.syllabify("quietly", language: "en").syllables == ["qui", "et", "ly"])
+        #expect(Syllabifier.syllabify("quiet", language: "en").syllables == ["qui", "et"])
+        var song = SongDocument()
+        song.appendPhrase(text: "quietly", language: "en", syllabify: true)
+        #expect(song.syllables.allSatisfy { !$0.ipa.value.isEmpty && !$0.reading.value.isEmpty })
+    }
+
     @Test func wholeWordDictionaryPreventsSpellingFragmentPronunciations() throws {
         let cases: [(String, String, [String]?)] = [
             ("coming", "kʌmɪŋ", ["カ", "ミング"]), ("comin’", "kʌmɪn", ["カ", "ミン"]),

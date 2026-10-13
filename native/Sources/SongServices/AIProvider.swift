@@ -26,7 +26,7 @@ public struct LinguisticAnalysisRequest: Codable, Sendable {
     public var words: [Token]
     public init(document: SongDocument, phrase: Phrase) {
         documentID = document.id; revision = document.revision; phraseID = phrase.id
-        sourceLanguage = document.metadata.sourceLanguage; originalText = phrase.originalText
+        sourceLanguage = document.language(of: phrase); originalText = phrase.originalText
         words = document.words(in: phrase).map { .init(id: $0.id, surface: $0.surface) }
     }
 }

@@ -69,6 +69,8 @@ final class WorkspaceSession: ObservableObject {
 struct WorkspaceView: View {
     @Binding var file: SongFile
     @StateObject private var session = WorkspaceSession()
+    @EnvironmentObject private var modelSettings: ModelSettings
+    @State private var showingModels = false
     @EnvironmentObject private var displayPreferences: DisplayPreferences
     @Environment(\.undoManager) private var undoManager
     @State private var addingLyrics = false
@@ -81,6 +83,9 @@ struct WorkspaceView: View {
     @State private var input = ""
     @State private var inputLanguage = "en"
     @State private var splitSyllables = true
+    @State private var pronunciationTask: Task<Void, Never>?
+    @State private var pronunciationRun: UUID?
+    @State private var pronunciationStatus: String?
     @State private var pendingMIDI: PendingMIDIImport?
     private var song: SongDocument { file.song }
     private var phrase: Phrase? { session.phraseID.flatMap { song.phrase($0) } ?? song.phrases.first }
@@ -90,11 +95,28 @@ struct WorkspaceView: View {
             sidebar.navigationSplitViewColumnWidth(min: 185, ideal: 215, max: 260)
         } detail: {
             VStack(spacing: 0) {
+                if let pronunciationStatus {
+                    HStack {
+                        if pronunciationRun != nil { ProgressView().controlSize(.small) }
+                        Text(pronunciationStatus).font(.callout).textSelection(.enabled)
+                        Spacer(minLength: 8)
+                        Button("AI接続") { showingModels = true }
+                        if pronunciationRun != nil {
+                            Button("中止") { stopPronunciation() }
+                        } else {
+                            Button("再確認") { completePronunciation(song.phrases.map(\.id)) }
+                            Button("閉じる") { self.pronunciationStatus = nil }
+                        }
+                    }.padding(12).background(Color.teal.opacity(0.06))
+                    Divider()
+                }
                 if let phrase {
                     HStack(alignment: .top, spacing: 0) {
                         VStack(alignment: .leading, spacing: 0) {
                             if session.mode == .reading {
-                                ReadingView(song: song, session: session, preferences: displayPreferences, mutate: mutate)
+                                ReadingView(song: song, session: session, preferences: displayPreferences,
+                                            completePronunciation: { completePronunciation(song.phrases.map(\.id)) },
+                                            pronunciationRunning: pronunciationRun != nil, mutate: mutate)
                             } else {
                                 phraseHeader(phrase)
                                 SingingView(song: song, phrase: phrase, session: session,
@@ -117,7 +139,7 @@ struct WorkspaceView: View {
                 } else { welcome }
             }.background(Color(nsColor: .textBackgroundColor))
         }
-        .tint(.teal).frame(minWidth: 900, minHeight: 650)
+        .tint(.teal).frame(minWidth: 900, minHeight: 500)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("表示モード", selection: $session.mode) {
@@ -125,6 +147,7 @@ struct WorkspaceView: View {
                 }.pickerStyle(.segmented).frame(width: 160)
             }
             ToolbarItemGroup(placement: .primaryAction) {
+                Button("AI接続", systemImage: "cpu") { showingModels = true }
                 Button { showingSamples = true } label: { Label("サンプルを表示", systemImage: "books.vertical") }
                 Menu {
                     Button("Word (.docx)") { exportSheet(.word) }
@@ -204,7 +227,16 @@ struct WorkspaceView: View {
                 if let position = session.guide.position { session.position = position }
             }
         }
-        .onDisappear { stopPlayback() }
+        .onChange(of: song.id) { _, _ in stopPronunciation(); pronunciationStatus = nil }
+        .onChange(of: modelSettings.preferences) { _, _ in stopPronunciation() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerWillUndoChange)) { notification in
+            if let manager = notification.object as? UndoManager, manager === undoManager { stopPronunciation() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerWillRedoChange)) { notification in
+            if let manager = notification.object as? UndoManager, manager === undoManager { stopPronunciation() }
+        }
+        .onDisappear { stopPlayback(); stopPronunciation() }
+        .sheet(isPresented: $showingModels) { ModelConnectionSheet(settings: modelSettings) }
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
         .sheet(isPresented: $showingSamples) { samplePicker }
         .sheet(isPresented: $session.showingParts) { PartsSheet(song: song, session: session, mutate: mutate) }
@@ -444,69 +476,76 @@ struct WorkspaceView: View {
     }
 
     private var lyricsSheet: some View {
-        let lines = input.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        return VStack(alignment: .leading, spacing: 14) {
-            Text("歌詞を追加").font(.title2.bold())
-            Text("1行ずつフレーズになります。原文の空白や記号はそのまま保持します。歌詞は利用者が権利を確認したものを使ってください。")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 16) {
-                Picker("言語", selection: $inputLanguage) {
-                    ForEach(Syllabifier.languages) { Text($0.name).tag($0.id) }
-                }.frame(width: 260)
-                Toggle("音節に分ける（規則による候補）", isOn: $splitSyllables).toggleStyle(.checkbox)
-            }
-            TextEditor(text: $input).font(.body).frame(width: 560, height: 150).border(Color.secondary.opacity(0.2)).accessibilityLabel("追加する歌詞")
-            if splitSyllables && !lines.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("音節の候補（追加後に単語の詳細で直せます）").font(.caption.weight(.semibold)).foregroundStyle(.teal)
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(Array(lines.prefix(12).enumerated()), id: \.offset) { _, line in
-                                Text(syllablePreview(line)).font(.system(size: 13, design: .serif)).textSelection(.enabled)
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }.frame(height: min(130, Double(min(lines.count, 12)) * 20 + 6))
-                    Text(inputLanguage == "ja" ? "漢字の読みは推定です。「漢字（かんじ）」と書くと読みを指定できます。"
-                         : inputLanguage == "ru" ? "強勢は母音の後に結合アクセント（◌́）を付けると指定できます。" : "・は音節の区切り、太字は推定した強勢です。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            HStack {
-                Button("キャンセル", role: .cancel) { addingLyrics = false }
-                Spacer()
-                Button("追加") {
-                    let language = inputLanguage
-                    let split = splitSyllables
-                    mutate("歌詞を追加") { doc in
-                        if doc.phrases.isEmpty { doc.metadata.sourceLanguage = language }
-                        for line in input.components(separatedBy: .newlines) { doc.appendPhrase(text: line, language: language, syllabify: split) }
-                    }
-                    if let last = file.song.phrases.last { session.select(last) }
-                    input = ""; addingLyrics = false
-                }.buttonStyle(.borderedProminent).disabled(lines.isEmpty)
-            }
-        }.padding(28)
+        LyricsEntrySheet(input: $input, language: $inputLanguage, splitSyllables: $splitSyllables,
+                         method: modelSettings.preferences.mode.label,
+                         cancel: { addingLyrics = false }, add: addLyrics)
             .onAppear {
                 let current = song.metadata.sourceLanguage
                 inputLanguage = Syllabifier.supports(current) ? current : "en"
             }
     }
 
-    private func syllablePreview(_ line: String) -> AttributedString {
-        var result = AttributedString()
-        for (index, token) in Syllabifier.tokenize(line, language: inputLanguage).enumerated() {
-            if index > 0 { result += AttributedString("   ") }
-            let split = Syllabifier.syllabify(token, language: inputLanguage)
-            if split.syllables.isEmpty { result += AttributedString(token.surface + "（未分割）"); continue }
-            for (position, syllable) in split.syllables.enumerated() {
-                if position > 0 { result += AttributedString("・") }
-                var part = AttributedString(syllable)
-                if position == split.stressIndex { part.inlinePresentationIntent = .stronglyEmphasized }
-                result += part
+    private func addLyrics() {
+        let previousIDs = Set(song.phrases.map(\.id))
+        mutate("歌詞を追加") { doc in
+            if doc.phrases.isEmpty { doc.metadata.sourceLanguage = inputLanguage }
+            for line in input.components(separatedBy: .newlines) {
+                doc.appendPhrase(text: line, language: inputLanguage, syllabify: splitSyllables)
             }
-            if let readings = split.readings { result += AttributedString("（\(readings.joined(separator: "・"))）") }
         }
-        return result
+        let added = file.song.phrases.filter { !previousIDs.contains($0.id) }
+        guard !added.isEmpty else { return } // Keep the input if validation fails.
+        if let first = added.first { session.select(first) }
+        input = ""; addingLyrics = false
+        if splitSyllables { completePronunciation(added.map(\.id)) }
+    }
+
+    private func stopPronunciation() {
+        pronunciationTask?.cancel(); pronunciationTask = nil
+        if pronunciationRun != nil {
+            pronunciationStatus = "発音の補完を中止しました。反映済みの発音と手修正は保持しています。"
+        }
+        pronunciationRun = nil
+    }
+
+    private func completePronunciation(_ phraseIDs: [UUID]) {
+        stopPronunciation()
+        let ids = Set(phraseIDs)
+        mutate("辞書の発音を補完") {
+            EnglishPronunciation.apply(to: &$0, phraseIDs: ids)
+            DictionaryLookup.apply(to: &$0, phraseIDs: ids)
+        }
+        let missing = PronunciationCompletion.missingWords(in: song, phraseIDs: ids)
+        guard !missing.isEmpty else {
+            pronunciationStatus = "IPA・カタカナの未設定はありません。"; return
+        }
+        if modelSettings.preferences.mode == .dictionary {
+            pronunciationStatus = "辞書を適用しました。未設定の発音は\(missing.count)語です。辞書定義は単語の詳細で確認できます。"; return
+        }
+        let run = UUID()
+        pronunciationRun = run
+        pronunciationStatus = "利用できるAIを確認中…"
+        pronunciationTask = Task { @MainActor in
+            do {
+                let clients = await modelSettings.clients()
+                try Task.checkCancellation()
+                try await PronunciationCompletion().run(phraseIDs: phraseIDs, clients: clients, current: { file.song }, apply: { result, snapshot, id in
+                    guard pronunciationRun == run else { return }
+                    mutate("発音の候補を補完") { PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &$0) }
+                }, progress: { value in
+                    if pronunciationRun == run { pronunciationStatus = value }
+                })
+                guard pronunciationRun == run else { return }
+                let remaining = PronunciationCompletion.missingWords(in: file.song, phraseIDs: ids)
+                pronunciationStatus = remaining.isEmpty
+                    ? "発音の補完が完了しました。カタカナは歌唱用の近似です。確認して使ってください。"
+                    : "発音の補完が終了しました。未設定・要確認 \(remaining.count)語：" + remaining.prefix(8).map(\.surface).joined(separator: "、")
+            } catch {
+                guard pronunciationRun == run else { return }
+                pronunciationStatus = "発音の補完が止まりました。歌詞と反映済みの発音は保持しています。" + error.localizedDescription
+            }
+            if pronunciationRun == run { pronunciationRun = nil; pronunciationTask = nil }
+        }
     }
 
     private func mutate(_ name: String, _ mutation: (inout SongDocument) throws -> Void) {

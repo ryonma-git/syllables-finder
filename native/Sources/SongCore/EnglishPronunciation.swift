@@ -166,6 +166,33 @@ public enum EnglishPronunciation {
         phones(for: surface).map { splitPhones($0).map(ipa).joined() }
     }
 
+    /// Used only while creating syllables, never to resize an existing saved word.
+    public static func dictionarySyllableCounts(for surface: String) -> Set<Int> {
+        Set(phones(for: surface).map { splitPhones($0).count })
+    }
+
+    /// Model kana can contradict its IPA. For supported English phones, derive the singing
+    /// aid by the same phone-based rules as the dictionary instead of accepting that mismatch.
+    public static func reading(forIPA value: String) -> String? {
+        var text = value.filter { !"/[]ˈˌ .·\n\t".contains($0) }
+        let tokens = ["aɪ": "AY1", "aʊ": "AW1", "eɪ": "EY1", "oʊ": "OW1", "ɔɪ": "OY1",
+                      "tʃ": "CH", "dʒ": "JH", "ɜːr": "ER1", "ɚ": "ER0", "ɝ": "ER1",
+                      "iː": "IY1", "uː": "UW1", "ɑː": "AA1", "aː": "AA1", "ɔː": "AO1", "oː": "AO1",
+                      "ɑ": "AA1", "ɒ": "AA1", "a": "AA1", "æ": "AE1", "ɔ": "AO1", "ɛ": "EH1", "e": "EH1",
+                      "ɪ": "IH1", "i": "IY0", "ʊ": "UH1", "u": "UW0", "ə": "AH0", "ʌ": "AH1", "o": "OW1",
+                      "p": "P", "b": "B", "t": "T", "d": "D", "k": "K", "ɡ": "G", "g": "G", "f": "F", "v": "V",
+                      "θ": "TH", "ð": "DH", "s": "S", "z": "Z", "ʃ": "SH", "ʒ": "ZH", "h": "HH", "m": "M",
+                      "n": "N", "ŋ": "NG", "l": "L", "ɫ": "L", "r": "R", "ɹ": "R", "j": "Y", "w": "W", "ɾ": "T"]
+        let keys = tokens.keys.sorted { $0.count == $1.count ? $0 < $1 : $0.count > $1.count }
+        var phones: [String] = []
+        while !text.isEmpty {
+            guard let key = keys.first(where: { text.hasPrefix($0) }) else { return nil }
+            phones.append(tokens[key]!); text.removeFirst(key.count)
+        }
+        guard !phones.isEmpty else { return nil }
+        return kana(phones, geminate: true, lengthened: value.contains("ː") && phones.filter(isVowel).count == 1)
+    }
+
     /// Homographs need context. Retain a matching pronunciation; otherwise only auto-select
     /// when the dictionary has one vowel sequence (or a specified common function-word form).
     public static func candidate(for surface: String, texts: [String], currentIPA: [String] = []) -> Candidate? {
@@ -258,7 +285,7 @@ public enum EnglishPronunciation {
         "especially": ["エス", "ペ", "シャ", "リ"]]
 
     /// Broad kana approximation driven by phones, never by English spelling fragments.
-    private static func kana(_ phones: [String], geminate: Bool) -> String {
+    private static func kana(_ phones: [String], geminate: Bool, lengthened: Bool = false) -> String {
         guard let nucleus = phones.firstIndex(where: isVowel) else { return phones.map { coda[base($0)] ?? "" }.joined() }
         // Explicit song grouping may contain two nuclei; render each natural syllable in order.
         if phones.filter(isVowel).count > 1 {
@@ -275,6 +302,7 @@ public enum EnglishPronunciation {
                       "IH": 1, "IY": 1, "OW": 4, "OY": 4, "UH": 2, "UW": 2][vowel] ?? 0
         var suffix = ["AO": "ー", "AW": "ウ", "AY": "イ", "ER": "ー", "EY": "イ", "IY": "ー", "OW": "ウ", "OY": "イ", "UW": "ー"][vowel] ?? ""
         if ["IY0", "UW0"].contains(phones[nucleus]) { suffix = "" }
+        if lengthened && suffix.isEmpty { suffix = "ー" }
         if tail.first == "R", ["AA", "AO", "AH", "IH", "IY", "EH", "UH", "UW"].contains(vowel) {
             suffix = ["AA", "AO", "AH"].contains(vowel) ? "ー" : "ア"
             tail.removeFirst()

@@ -255,7 +255,19 @@ public enum Syllabifier {
             return .init(syllables: parts, stressIndex: core.lowercased().hasPrefix("creat") ? 1 : nil)
         }
         var letters = letters(core)
-        let (nuclei, note) = orthographicNuclei(in: &letters, language: language)
+        var (nuclei, note) = orthographicNuclei(in: &letters, language: language)
+        if language == "en" {
+            let counts = EnglishPronunciation.dictionarySyllableCounts(for: core)
+            // Written adjacent vowels can be hiatus, e.g. qui-et-ly. Only expand when
+            // all dictionary variants agree; the original spelling remains unchanged.
+            if counts.count == 1, let target = counts.first, target > nuclei.count,
+               nuclei.reduce(0, { $0 + $1.count }) >= target {
+                while nuclei.count < target, let index = nuclei.firstIndex(where: { $0.count > 1 }) {
+                    let range = nuclei[index]
+                    nuclei.replaceSubrange(index...index, with: [range.lowerBound..<(range.lowerBound + 1), (range.lowerBound + 1)..<range.upperBound])
+                }
+            }
+        }
         let n = letters.count
         guard !nuclei.isEmpty else { return .init(syllables: [core]) }
         // Onsets: how many consonant letters before each nucleus (after the first) start its syllable.
@@ -464,6 +476,7 @@ public enum Syllabifier {
             return length(units.count)
         case "en":
             if finalLE { return length(min(2, units.count)) } // twin-kle, lit-tle: the consonant before -le starts it
+            if lastTwo == "tl" { return length(1) } // quiet-ly: /tl/ is not an English syllable onset.
             if liquids.contains(lastTwo) && !["ck", "ng"].contains(units[units.count - 2]) { return length(2) }
             if ["ck", "ng", "x"].contains(last) { return 0 }
             return length(1)
