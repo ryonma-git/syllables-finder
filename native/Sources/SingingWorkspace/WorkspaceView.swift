@@ -82,7 +82,7 @@ struct WorkspaceView: View {
     @State private var changingTempo = false
     @State private var input = ""
     @State private var inputLanguage = "en"
-    @State private var inputEnglishStyle: EnglishPronunciationStyle = .british
+    @State private var inputEnglishStyle: EnglishPronunciationStyle = .american
     @State private var splitSyllables = true
     @State private var pronunciationTask: Task<Void, Never>?
     @State private var pronunciationRun: UUID?
@@ -485,7 +485,7 @@ struct WorkspaceView: View {
             .onAppear {
                 let current = song.metadata.sourceLanguage
                 inputLanguage = Syllabifier.supports(current) ? current : "en"
-                inputEnglishStyle = song.phrases.isEmpty ? .british : song.metadata.englishPronunciationStyle
+                inputEnglishStyle = song.phrases.isEmpty ? .american : song.metadata.englishPronunciationStyle
             }
     }
 
