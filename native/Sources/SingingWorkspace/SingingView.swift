@@ -9,6 +9,7 @@ struct SingingView: View {
     let applyRange: (BeatRange) -> Void
     let seek: (Double) -> Void
     @State private var followedRow: Int?
+    @State private var staffScale = Self.overviewScale
 
     private var projection: MeasureProjection { MeasureProjection(song: song) }
 
@@ -44,13 +45,14 @@ struct SingingView: View {
                             LazyVStack(alignment: .leading, spacing: 16) {
                                 ForEach(rows.indices, id: \.self) { index in
                                     if session.singingLayout == .overview || index == session.detailIndex {
-                                        let scale = session.singingLayout == .detail ? 120 : Self.overviewScale
+                                        let base = session.pitchDisplay == .staff ? staffScale : Self.overviewScale
+                                        let scale = session.singingLayout == .detail ? max(120, base) : base
                                         if session.pitchDisplay == .staff {
                                             Group {
                                                 StaffOrTimelineRow(song: song, measures: rows[index], scale: scale,
                                                                    session: session, onMeasureTap: selectMeasure, seek: seek,
                                                                    low: lowPitch, high: highPitch)
-                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(session.singingLayout)-\(session.showReading)-\(session.showIPA)-\(session.textScale)-\(session.partID)")
+                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(scale)-\(session.singingLayout)-\(session.showReading)-\(session.showIPA)-\(session.textScale)-\(session.partID)")
                                             }.id(index)
                                         } else {
                                             Group {
@@ -78,6 +80,9 @@ struct SingingView: View {
                     }
                 }
             }
+            .task(id: "\(song.id)-\(song.revision)-\(session.showReading)-\(session.showIPA)-\(session.textScale)") {
+                staffScale = ScoreRow.readableScale(song: song, session: session)
+            }
             .onChange(of: session.phraseID) { _, _ in
                 guard session.guideState != .playing, let range = phrase.timeRange else { return }
                 session.detailIndex = projection.containing(range.start.doubleValue) / 2
@@ -94,9 +99,12 @@ struct SingingView: View {
             guard let first = group.first, let last = group.last else { continue }
             quarters = max(quarters, last.range.end.doubleValue - first.range.start.doubleValue)
         }
-        let leading = session.pitchDisplay == .staff ? ScoreRow.leftMargin(song: song, scale: Self.overviewScale) : 58.0
+        let scale = session.pitchDisplay == .staff ? staffScale : Self.overviewScale
+        let leading = session.pitchDisplay == .staff ? ScoreRow.leftMargin(song: song, scale: scale) : 58.0
         let rowChrome = leading + 16 + 36       // keyboard or clef column, row trailing space, list padding
-        return availableWidth >= rowChrome + quarters * Self.overviewScale ? 4 : 2
+        if availableWidth >= rowChrome + quarters * scale { return 4 }
+        if session.pitchDisplay == .staff && availableWidth < rowChrome + quarters * scale / 2 { return 1 }
+        return 2
     }
 
     static let overviewScale = 54.0

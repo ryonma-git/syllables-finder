@@ -34,7 +34,7 @@ public enum SampleCatalog {
         .init(id: "frere", title: "Frère Jacques", languageCode: "fr", subtitle: "8小節 · 32音節",
               details: "繰り返しの旋律で、読みとIPAを見比べます。", factory: makeFrereJacques),
         .init(id: "ninth", title: "第九・歓喜の歌", languageCode: "de", subtitle: "第1節4行 · 旋律付き",
-              details: "シラーの第1節と、ベートーヴェンの旋律を収録。歌詞と音符の対応は未校訂です。",
+              details: "シラーの第1節と、ベートーヴェンの旋律を収録。歌詞と音符の対応、音を伸ばす箇所を確認できます。",
               factory: { SourceMelodies.attaching("ninth", to: makeNinth()) }),
         .init(id: "morning", title: "Morning light", languageCode: "en", subtitle: "オリジナル · 2小節",
               details: "短い操作練習用のサンプルです。", factory: SampleSongDocument.make)

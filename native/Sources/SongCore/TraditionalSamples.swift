@@ -8,13 +8,13 @@ enum TraditionalSamples {
 
     static let entries: [SampleEntry] = [
         .init(id: "entchen", title: "Alle meine Entchen", languageCode: "de",
-              subtitle: "ドイツの童謡 · 第1節 · 旋律付き",
+              subtitle: "ドイツの童謡 · 第1節（反復省略） · 歌詞と旋律付き",
               details: "小さなアヒルの童謡。ドイツ語の読みと旋律を練習できます。", factory: { SourceMelodies.attaching("entchen", to: entchen()) }),
         .init(id: "pollitos", title: "Los pollitos dicen", languageCode: "es",
               subtitle: "チリの童謡 · 冒頭 · 旋律付き",
               details: "ひよこが鳴く童謡。スペイン語の母音と音節を練習できます。", factory: { SourceMelodies.attaching("pollitos", to: pollitos()) }),
         .init(id: "martino", title: "Fra Martino", languageCode: "it",
-              subtitle: "イタリア語版の伝承歌 · 冒頭 · 旋律付き",
+              subtitle: "イタリア語版の伝承歌 · 反復省略 · 歌詞と旋律付き",
               details: "Frère Jacques のイタリア語版。発音の違いを比べられます。", factory: { SourceMelodies.attaching("martino", to: martino()) }),
         .init(id: "adeste", title: "Adeste Fideles", languageCode: "la",
               subtitle: "ラテン語の聖歌 · 冒頭 · 旋律付き",

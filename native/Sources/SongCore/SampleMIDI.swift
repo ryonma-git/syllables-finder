@@ -23,6 +23,14 @@ public enum SampleMIDI {
         messages.append(.init(tick: 0, priority: 0, bytes: [0xFF, 0x51, 0x03,
             UInt8((micros >> 16) & 0xFF), UInt8((micros >> 8) & 0xFF), UInt8(micros & 0xFF)]))
         messages.append(.init(tick: 0, priority: 1, bytes: [0xC0, 0]))
+        for meter in song.music.meters {
+            guard meter.numerator <= 255, meter.denominator.nonzeroBitCount == 1 else {
+                throw SongError.invalid("MIDIで表せない拍子です。")
+            }
+            let tick = Int((meter.onset.doubleValue * Double(ticksPerBeat)).rounded())
+            messages.append(.init(tick: tick, priority: 0, bytes: [0xFF, 0x58, 0x04,
+                UInt8(meter.numerator), UInt8(meter.denominator.trailingZeroBitCount), 24, 8]))
+        }
         for event in song.music.events {
             guard let note = event.note else { continue }
             let start = Int((event.onset.doubleValue * Double(ticksPerBeat)).rounded())

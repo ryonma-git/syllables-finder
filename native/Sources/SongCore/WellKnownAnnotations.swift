@@ -40,7 +40,8 @@ enum WellKnownAnnotations {
             ("ma", "ma", "マ"),
             ("cla", "kla", "クラ"),
             ("ri", "ʁi", "リ"),
-            ("nette", "nɛt", "ネット"),
+            ("net", "nɛ", "ネ"),
+            ("te", "tə", "トゥ"),
         ],
         "marseillaise": [
             ("Al", "a", "ア"),
@@ -50,7 +51,8 @@ enum WellKnownAnnotations {
             ("de", "də", "ドゥ"),
             ("la", "la", "ラ"),
             ("Pa", "pa", "パ"),
-            ("trie", "tʁi", "トリ"),
+            ("tri", "tʁi", "トリ"),
+            ("e", "ə", "ウ"),
             ("le", "lə", "ル"),
             ("jour", "ʒuʁ", "ジュール"),
             ("de", "də", "ドゥ"),
@@ -62,16 +64,19 @@ enum WellKnownAnnotations {
         ],
         "gloria": [
             ("Les", "le", "レ"),
-            ("anges", "zɑ̃ʒ", "ザンジュ"),
+            ("an", "zɑ̃", "ザン"),
+            ("ges", "ʒə", "ジュ"),
             ("dans", "dɑ̃", "ダン"),
             ("nos", "no", "ノ"),
             ("cam", "kɑ̃", "カン"),
-            ("pagnes", "paɲ", "パーニュ"),
+            ("pa", "pa", "パ"),
+            ("gnes", "ɲə", "ニュ"),
             ("ont", "ɔ̃", "オン"),
             ("en", "tɑ̃", "タン"),
             ("ton", "tɔ", "ト"),
             ("né", "ne", "ネ"),
-            ("l'hymne", "limn", "リムヌ"),
+            ("l'hym", "lim", "リム"),
+            ("ne", "nə", "ヌ"),
             ("des", "de", "デ"),
             ("cieux", "sjø", "シュー"),
         ],
@@ -107,16 +112,16 @@ enum WellKnownAnnotations {
             ("ча", "ˈt͡ɕa", "チャ"),
         ],
         "week": [
-            ("В", "f", "フ"),
-            ("по", "pə", "パ"),
-            ("не", "nʲɪ", "ニェ"),
-            ("дель", "ˈdʲelʲ", "デリ"),
-            ("ник", "nʲɪk", "ニク"),
+            ("В", "v", "ヴ"),
+            ("во", "vəs", "ヴァス"),
+            ("скре", "krʲɪ", "クリェ"),
+            ("се", "ˈsʲe", "スィェ"),
+            ("нье", "nʲjə", "ニャ"),
             ("я", "ja", "ヤ"),
-            ("в", "v", "ヴ"),
-            ("ба", "ˈba", "バ"),
-            ("ню", "nʲʊ", "ニュ"),
-            ("шку", "ʂkʊ", "シュク"),
+            ("на", "nə", "ナ"),
+            ("яр", "ˈjar", "ヤル"),
+            ("мар", "mər", "マル"),
+            ("ку", "kʊ", "ク"),
             ("хо", "xɐ", "ハ"),
             ("ди", "ˈdʲi", "ディ"),
             ("ла", "lə", "ラ"),
@@ -160,7 +165,7 @@ enum WellKnownAnnotations {
         "gloria": ["その", "天使たち", "～で", "私たちの", "野原", "～した", "歌い始めた", "賛歌", "～の", "天"],
         "kalinka": ["カリンカ", "カリンカ", "カリンカ", "私の"],
         "korobeiniki": ["ああ", "いっぱい", "いっぱい", "小箱", "あります", "～も", "更紗", "～も", "錦織"],
-        "week": ["～に", "月曜日", "私は", "～へ", "蒸し風呂", "行った"],
+        "week": ["～に", "日曜日", "私は", "～へ", "市場", "行った"],
         "danny": ["ああ", "ダニー", "坊や", "その", "バグパイプ", "その", "バグパイプ", "～している", "呼んでいる"],
         "auld": ["～だろうか", "古い", "知り合い", "～される", "忘れられる", "そして", "決して～ない", "思い起こされる", "～に", "心"],
     ]
@@ -172,7 +177,7 @@ enum WellKnownAnnotations {
         guard let wordMeanings = meanings[sample], wordMeanings.count == song.words.count else {
             preconditionFailure("Missing or mismatched word meanings for \(sample)")
         }
-        let source = sample == "danny"
+        let source = ["danny", "clarinet", "marseillaise", "gloria", "week"].contains(sample)
             ? FieldSource(.sample, provider: "Manual pronunciation review")
             : FieldSource(.sample, provider: "Local Ollama candidate, reviewed", model: "qwen3.5:9b")
         for (index, sound) in sounds.enumerated() {

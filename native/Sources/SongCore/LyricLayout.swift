@@ -25,6 +25,37 @@ public struct LyricItem: Sendable, Equatable, Identifiable {
 }
 
 public enum LyricLayout {
+    /// Keep beat-proportional staves readable at their natural lyric size, including readings.
+    /// The allowance reserves room for a following accidental and a separating hyphen.
+    public static func minimumBeatScale(song: SongDocument, minimum: Double, allowance: Double = 28,
+                                        measure: ([Syllable]) -> Double) -> Double {
+        let events = Dictionary(uniqueKeysWithValues: song.music.events.map { ($0.id, $0) })
+        let syllables = Dictionary(uniqueKeysWithValues: song.syllables.map { ($0.id, $0) })
+        var groups: [UUID: [UUID]] = [:]
+        for alignment in song.alignments {
+            let notes = alignment.musicTargets.compactMap { target -> MusicalEvent? in
+                if case .event(let id, _) = target, let event = events[id], event.note != nil { return event }
+                return nil
+            }
+            guard let first = notes.min(by: { $0.onset < $1.onset }) else { continue }
+            groups[first.id, default: []] += alignment.languageTargets.filter { $0.kind == .syllable }.map(\.id)
+        }
+        let parts = Dictionary(grouping: groups.keys.compactMap { events[$0] }, by: \.partID)
+        var result = minimum
+        for notes in parts.values {
+            let ordered = notes.sorted { $0.onset < $1.onset }
+            for (index, note) in ordered.enumerated() {
+                let next = ordered.dropFirst(index + 1).first { $0.onset > note.onset }
+                let end = next?.onset.doubleValue ?? (note.onset.doubleValue + note.duration.doubleValue)
+                let distance = end - note.onset.doubleValue
+                guard distance > 0 else { continue }
+                let width = measure((groups[note.id] ?? []).compactMap { syllables[$0] })
+                result = max(result, (width + allowance) / distance)
+            }
+        }
+        return result
+    }
+
     /// - Parameters:
     ///   - include: events of the staff (one part); syllables aligned to other parts are ignored.
     ///   - headLeft: notehead left edges from the engraving, when drawn as a staff.

@@ -124,4 +124,29 @@ struct StaffEngravingTests {
         #expect(items[0].hyphen != nil && items[1].hyphen == nil && items[6].hyphen == nil)
         #expect(items[0].x == heads(engraving)[0].x - 6) // notehead left edge (width 1.2 sp)
     }
+
+    @Test func sampleLyricsAndReadingsFitBesideAccidentalsWithoutShrinking() {
+        for entry in SampleCatalog.entries {
+            let song = entry.make()
+            func width(_ units: [Syllable]) -> Double {
+                max(Double(units.map(\.text.value).joined(separator: "‿").count) * 8,
+                    Double(units.map(\.reading.value).joined(separator: "‿").count) * 11)
+            }
+            let scale = LyricLayout.minimumBeatScale(song: song, minimum: 54, measure: width)
+            let slices = MeasureProjection(song: song).slices
+            let end = MeasureProjection.songEnd(song)
+            let projection = NotationProjection(song: song, measures: slices)
+            let engraving = StaffEngraving(pieces: projection.pieces, measures: slices, meters: song.music.meters,
+                clef: .treble, space: 15, staffTop: 100, lineStart: 0, lineEnd: end.doubleValue * scale + 100,
+                headerX: nil, headerMeter: nil, songEnd: end.doubleValue, x: { 100 + $0 * scale })
+            let items = LyricLayout.items(song: song, range: .init(start: .zero, end: end), include: { _ in true },
+                headLeft: engraving.headLeft, x: { 100 + $0 * scale }, noteEnd: { engraving.headRight[$0] },
+                measure: { Double($0.count) * 8 })
+            for pair in zip(items, items.dropFirst()) {
+                let units = pair.0.syllableIDs.compactMap { song.syllable($0) }
+                #expect(pair.0.x + width(units) + 8 < pair.1.x, "\(entry.id): \(pair.0.text)")
+                #expect(pair.0.fontScale == 1, "\(entry.id): \(pair.0.text)")
+            }
+        }
+    }
 }

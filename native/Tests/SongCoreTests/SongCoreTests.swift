@@ -61,8 +61,8 @@ struct SongCoreTests {
             #expect(!song.music.events.isEmpty)
             if SourceMelodies.scores[entry.id] != nil {
                 #expect(song.metadata.notes.contains("旋律資料:"))
-                #expect(song.metadata.notes.contains("未校訂"))
-                #expect(song.alignments.isEmpty)
+                #expect(song.metadata.notes.contains("表示する歌詞の範囲"))
+                #expect(!song.hasUnplacedLyrics)
                 #expect(try SampleMIDI.encode(song).starts(with: Data("MThd".utf8)))
             } else if entry.id != "morning" {
                 #expect(song.syllables.count == song.music.events.compactMap(\.note).count)
@@ -76,7 +76,7 @@ struct SongCoreTests {
     @Test func traditionalSamplesKeepTheirAnnotationsWithScoreMelodies() throws {
         for entry in TraditionalSamples.entries {
             let song = entry.make()
-            #expect(!song.music.events.isEmpty && song.alignments.isEmpty)
+            #expect(!song.music.events.isEmpty && !song.hasUnplacedLyrics)
             #expect(song.words.allSatisfy { !$0.contextualMeaning.value.isEmpty })
             #expect(song.phrases.allSatisfy { !$0.translation.value.isEmpty })
             #expect(song.phrases.allSatisfy { !$0.originalText.isEmpty })
@@ -89,7 +89,7 @@ struct SongCoreTests {
         try song.validate()
         #expect(song.phrases.count == 4)
         #expect(!song.music.events.isEmpty)
-        #expect(song.alignments.isEmpty)
+        #expect(!song.hasUnplacedLyrics)
         #expect(song.phrases[0].originalText == "Freude, schöner Götterfunken, Tochter aus Elysium!")
         #expect(song.words.count == 30)
         #expect(song.words.allSatisfy { !$0.contextualMeaning.value.isEmpty })

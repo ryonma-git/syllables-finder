@@ -36,8 +36,8 @@ enum WellKnownSamples {
               region: "ロシア民謡", lyric: "Ой, полна, полна коробушка, есть и ситцы и парча.",
               translation: "行商人の箱には、布や錦がいっぱいです。", serial: 260_000),
         .init(id: "week", title: "Неделька（一週間）", language: "ru",
-              region: "ロシア民謡", lyric: "В понедельник я в банюшку ходила.",
-              translation: "月曜日には蒸し風呂へ行きました。", serial: 270_000),
+              region: "ロシア民謡", lyric: "В воскресенье я на ярмарку ходила.",
+              translation: "日曜日には市場へ行きました。", serial: 270_000),
         .init(id: "danny", title: "Danny Boy（ダニーボーイ）", language: "en",
               region: "アイルランドの旋律", lyric: "Oh, Danny boy, the pipes, the pipes are calling.",
               translation: "ダニーよ、笛の音があなたを呼んでいます。", serial: 280_000),
@@ -49,7 +49,7 @@ enum WellKnownSamples {
     static let entries: [SampleEntry] = items.map { item in
         SampleEntry(id: item.id, title: item.title, languageCode: item.language,
                     subtitle: "\(item.region) · 原語の冒頭 · 旋律付き",
-                    details: "原語歌詞の冒頭と資料に基づく旋律。音節と音符の対応は未校訂です。",
+                    details: "原語の冒頭を、歌詞・発音・音符を対応づけて練習できます。全曲の収録ではありません。",
                     factory: { make(item) })
     }
 
@@ -75,11 +75,12 @@ enum WellKnownSamples {
 
     private static func correctedSyllables(_ candidate: [String], word: String, sample: String) -> [String] {
         switch (sample, word) {
-        case ("clarinet", "clarinette."): ["cla", "ri", "nette"]
+        case ("clarinet", "clarinette."): ["cla", "ri", "net", "te"]
+        case ("marseillaise", "Patrie,"): ["Pa", "tri", "e"]
         case ("marseillaise", "gloire"): ["gloire"]
-        case ("gloria", "anges"): ["anges"]
-        case ("gloria", "campagnes"): ["cam", "pagnes"]
-        case ("gloria", "l'hymne"): ["l'hymne"]
+        case ("gloria", "anges"): ["an", "ges"]
+        case ("gloria", "campagnes"): ["cam", "pa", "gnes"]
+        case ("gloria", "l'hymne"): ["l'hym", "ne"]
         case ("korobeiniki", "Ой,"): ["Ой"]
         default: candidate
         }

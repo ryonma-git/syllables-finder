@@ -14,6 +14,21 @@ struct ScoreRow: View {
     @State private var layout: Layout?
 
     static let lyricFont = "HiraginoSans-W3"
+    static func readableScale(song: SongDocument, session: WorkspaceSession) -> Double {
+        LyricLayout.minimumBeatScale(song: song, minimum: SingingView.overviewScale) { syllables in
+            var width = StaffPainter.textWidth(syllables.map(\.text.value).joined(separator: "‿"),
+                                               font: lyricFont, size: 14 * session.textScale)
+            if session.showReading {
+                width = max(width, StaffPainter.textWidth(syllables.map(\.reading.value).joined(separator: "‿"),
+                                                         font: lyricFont, size: 11 * session.textScale))
+            }
+            if session.showIPA {
+                width = max(width, StaffPainter.textWidth("/" + syllables.map(\.ipa.value).joined(separator: "‿") + "/",
+                                                         font: lyricFont, size: 10 * session.textScale))
+            }
+            return width
+        }
+    }
     static func space(scale: Double) -> Double { min(15, max(9.5, scale * 0.2)) }
     static func leftMargin(song: SongDocument, scale: Double) -> Double {
         10 + StaffEngraving.headerWidth(space: space(scale: scale), meter: song.music.meters.first)
