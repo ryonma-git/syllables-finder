@@ -46,6 +46,14 @@ public enum EnglishPronunciation {
         language.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first == "en"
     }
 
+    /// Shared syntax check for generation and review. ŋ is outside the IPA Extensions block.
+    public static func isValidIPA(_ value: String) -> Bool {
+        let text = value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "/[]")))
+        return !text.isEmpty && text.count <= 100 && text.unicodeScalars.allSatisfy {
+            (0x61...0x7A).contains($0.value) || (0x0250...0x036F).contains($0.value) || "æçðøœθŋ /[].·".unicodeScalars.contains($0)
+        }
+    }
+
     private static func key(_ surface: String) -> String {
         let value = surface.lowercased().replacingOccurrences(of: "’", with: "'")
         return value.trimmingCharacters(in: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted)

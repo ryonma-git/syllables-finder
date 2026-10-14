@@ -183,9 +183,14 @@ public struct OllamaPronunciationProvider: Sendable {
                 } else { hold("単語全体の読みを保存しました。音節対応は要確認です（手修正・音符対応は保持）。") }
                 continue
             }
-            let completeParts = !answer.syllables.isEmpty && answer.syllables.allSatisfy { validIPA($0.ipa) }
-            let partsContradictWhole = completeParts && EnglishPronunciation.phoneticKey(answer.ipa) !=
-                EnglishPronunciation.phoneticKey(answer.syllables.sorted { $0.id < $1.id }.map(\.ipa).joined())
+            if english, !Self.coversCompoundComponents(answer.ipa, surface: word.surface) {
+                hold("複合語の一部しか発音が返されていない可能性があります。単語全体を確認してください。")
+                continue
+            }
+            let nonemptyParts = answer.syllables.filter { !$0.ipa.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let partsContradictWhole = !nonemptyParts.isEmpty &&
+                (!nonemptyParts.allSatisfy { validIPA($0.ipa) } || EnglishPronunciation.phoneticKey(answer.ipa) !=
+                EnglishPronunciation.phoneticKey(nonemptyParts.sorted { $0.id < $1.id }.map(\.ipa).joined()))
             if english, !partsContradictWhole, validIPA(answer.ipa), EnglishPronunciation.reading(forIPA: answer.ipa) != nil,
                style != .british || Self.isBritishCitationIPA(answer.ipa) {
                 EnglishPronunciation.storeWhole(answer.ipa, wordID: word.id, source: client.source, in: &prepared)
@@ -253,6 +258,21 @@ public struct OllamaPronunciationProvider: Sendable {
         return .init(document: result, issues: issues)
     }
 
+    /// A conservative omission check, not proof of pronunciation. A compound with multiple
+    /// vowel-bearing components must not silently collapse to its first component.
+    private static func coversCompoundComponents(_ ipa: String, surface: String) -> Bool {
+        let parts = surface.lowercased().split(separator: "-")
+        guard parts.count > 1 else { return true }
+        let minimum = parts.filter { $0.contains { "aeiouy".contains($0) } }.count
+        var nuclei = 0, inVowel = false
+        for letter in EnglishPronunciation.phoneticKey(ipa) {
+            let vowel = "ɑɒæɔaʊɪɛeiouəʌɜɚɝ".contains(letter)
+            if vowel && !inVowel { nuclei += 1 }
+            inVowel = vowel
+        }
+        return nuclei >= minimum
+    }
+
     /// Catch explicit rhotic/GOAT contradictions; this is not a complete accent or accuracy proof.
     private static func isBritishCitationIPA(_ value: String) -> Bool {
         let text = EnglishPronunciation.phoneticKey(value)
@@ -265,10 +285,7 @@ public struct OllamaPronunciationProvider: Sendable {
     }
 
     private func validIPA(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "/[]")))
-        return !text.isEmpty && text.count <= 100 && text.unicodeScalars.allSatisfy {
-            (0x61...0x7A).contains($0.value) || (0x0250...0x036F).contains($0.value) || "æçðøœθ /[].·".unicodeScalars.contains($0)
-        }
+        EnglishPronunciation.isValidIPA(value)
     }
 
     private func validReading(_ value: String) -> Bool {

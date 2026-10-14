@@ -115,9 +115,7 @@ public enum PronunciationReview {
             let expected = word.expectedIPA.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !reason.isEmpty, reason.count <= 600, expected.count <= 100,
                   word.verdict == .uncertain || !expected.isEmpty,
-                  expected.isEmpty || expected.unicodeScalars.allSatisfy({
-                      (0x61...0x7A).contains($0.value) || (0x0250...0x036F).contains($0.value) || "æçðøœθ /[].·".unicodeScalars.contains($0)
-                  }) else { throw ProviderError.malformedResponse }
+                  expected.isEmpty || EnglishPronunciation.isValidIPA(expected) else { throw ProviderError.malformedResponse }
             var verdict = word.verdict, explanation = reason
             if word.verdict == .ok, EnglishPronunciation.supports(language) {
                 let key = PronunciationAudit.ipaKey(expected, style: style)

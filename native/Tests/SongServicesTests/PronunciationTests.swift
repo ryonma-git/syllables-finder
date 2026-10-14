@@ -512,6 +512,40 @@ struct PronunciationTests {
         #expect(result.issues.count == 1)
     }
 
+    @Test func aCompoundCannotSilentlyCollapseToItsFirstComponent() async throws {
+        for wholeOnly in [false, true] {
+            for ipa in ["zɪg", "zɪgənzægɪŋ"] {
+                var song = SongDocument()
+                song.appendPhrase(text: "zig-and-zagging", language: "en", syllabify: true)
+                let session = session { _ in
+                    let output = try JSONSerialization.data(withJSONObject: ["words": [["id": 0, "ipa": ipa, "syllables": []]]])
+                    return try JSONSerialization.data(withJSONObject: ["message": ["content": String(decoding: output, as: UTF8.self)]])
+                }
+                defer { session.invalidateAndCancel() }
+                let result = try await OllamaPronunciationProvider(model: "test", session: session)
+                    .annotateWithReport(phrase: song.phrases[0], in: song, wholeWordOnly: wholeOnly)
+                if ipa == "zɪg" {
+                    #expect(result.document.words[0].wholePronunciation == nil)
+                    #expect(result.issues.first?.reason.contains("複合語") == true)
+                } else { #expect(result.document.words[0].wholePronunciation?.ipa == ipa) }
+            }
+        }
+    }
+
+    @Test func reviewAcceptsTheVelarNasalIPASymbol() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "sing", language: "en", syllabify: true)
+        let session = session { _ in
+            let output = #"{"words":[{"id":0,"verdict":"ok","explanation":"辞書の発音と一致します","expectedIPA":"sɪŋ"}]}"#
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": output]])
+        }
+        defer { session.invalidateAndCancel() }
+        let result = try await PronunciationReview.check(PronunciationAudit.entries(in: song), language: "en", style: .american,
+            client: ModelClient(.ollama("test"), session: session))
+        #expect(result[song.words[0].id]?.verdict == .ok)
+        #expect(EnglishPronunciation.isValidIPA("/sɪŋ/") && !EnglishPronunciation.isValidIPA("歌"))
+    }
+
     private static func body(_ request: URLRequest) throws -> Data {
         if let body = request.httpBody { return body }
         let stream = try #require(request.httpBodyStream)
