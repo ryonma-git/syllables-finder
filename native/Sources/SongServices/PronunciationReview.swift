@@ -135,9 +135,10 @@ public enum PronunciationReview {
 
     /// Try distinct models first. Only still-pending words fall back to their generator or unknown provenance.
     @MainActor
-    public static func run(document: SongDocument, clients: [ModelClient],
+    public static func run(document: SongDocument, clients: [ModelClient], wordIDs: Set<UUID>? = nil,
                            update: (UUID, Result) -> Void, progress: (String) -> Void) async throws {
-        let entries = PronunciationAudit.entries(in: document)
+        // A prior AI warning must not force every subsequent review to repeat that verdict.
+        let entries = PronunciationAudit.entries(in: document, includeSavedReview: false).filter { wordIDs?.contains($0.id) ?? true }
         var unavailable = Set<String>()
         for (lineIndex, phrase) in document.phrases.enumerated() {
             var pending = entries.filter { $0.phraseID == phrase.id }

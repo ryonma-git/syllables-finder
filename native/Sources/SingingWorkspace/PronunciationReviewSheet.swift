@@ -6,6 +6,7 @@ import SongServices
 struct PronunciationReviewSheet: View {
     let song: SongDocument
     @ObservedObject var settings: ModelSettings
+    let saveReviews: (SongDocument, [UUID: PronunciationReview.Result]) -> Void
     let edit: (PronunciationAudit.Entry) -> Void
     @Environment(\.dismiss) private var dismiss
     @AppStorage("pronunciationReviewModel.v1") private var selection = "automatic"
@@ -27,7 +28,7 @@ struct PronunciationReviewSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("発音をチェック").font(.title2.bold())
-            Text("辞書照合とAIの見解を別々に表示します。この操作で歌詞・IPA・読みは変更されません。")
+            Text("辞書照合とAIの見解を別々に表示します。歌詞・IPA・読みは変更せず、閉じると検証結果を保存します。")
                 .font(.callout).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Picker("検証用AI", selection: $selection) {
@@ -101,7 +102,7 @@ struct PronunciationReviewSheet: View {
             .frame(width: min(880, (NSScreen.main?.visibleFrame.width ?? 1100) - 80),
                    height: min(700, (NSScreen.main?.visibleFrame.height ?? 850) - 120))
             .onAppear { reload(); scan() }
-            .onDisappear { cancel() }
+            .onDisappear { cancel(); saveReviews(song, results) }
             .onChange(of: song) { _, _ in reload(); message = "内容が変わったため、AI検証結果を取り消しました。再確認してください。" }
             .onChange(of: selection) { _, _ in
                 cancel(); results = [:]; message = "検証先を変更しました。AIでチェックを押すと実行します。"

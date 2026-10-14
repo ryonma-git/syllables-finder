@@ -184,6 +184,57 @@ public enum EnglishPronunciation {
         return phones(for: surface).map { splitPhones($0).map(ipa).joined() }
     }
 
+    /// Canonical phone groups, independent of the document's spelling boundaries.
+    public static func wholeCandidates(for surface: String, style: EnglishPronunciationStyle) -> [Candidate] {
+        let groups = style == .british ? BritishPronunciationLexicon.forms(for: surface) :
+            phones(for: surface).map { splitPhones($0).map(ipa) }
+        return groups.compactMap { values in
+            let readings = values.compactMap { reading(forIPA: $0) }
+            guard !values.isEmpty, readings.count == values.count else { return nil }
+            return Candidate(ipa: values, readings: readings, stressIndex: values.firstIndex { $0.contains("ˈ") })
+        }
+    }
+
+    /// Evidence for unknown hyphenated compounds, not a fabricated whole-word dictionary entry.
+    public static func compoundHints(for surface: String, style: EnglishPronunciationStyle) -> [String: [String]] {
+        let parts = key(surface).split(separator: "-").map(String.init)
+        guard parts.count > 1 else { return [:] }
+        var hints: [String: [String]] = [:]
+        for part in parts {
+            let exact = dictionaryIPA(for: part, style: style)
+            if !exact.isEmpty { hints[part] = exact }
+            else if part.hasSuffix("ing"), part.count > 4 {
+                let stem = String(part.dropLast(3))
+                let forms = dictionaryIPA(for: stem, style: style)
+                if !forms.isEmpty { hints[stem + " (stem of " + part + ")"] = forms }
+            }
+        }
+        return hints
+    }
+
+    public static func storeWhole(_ ipa: String, wordID: UUID, source: FieldSource, in song: inout SongDocument) {
+        guard let index = song.words.firstIndex(where: { $0.id == wordID }),
+              let reading = reading(forIPA: ipa), !ipa.isEmpty else { return }
+        song.words[index].wholePronunciation = .init(surface: song.words[index].surface,
+            style: song.metadata.englishPronunciationStyle, ipa: ipa, reading: reading, source: source)
+    }
+
+    /// Repair only automatic, unaligned segmentation for which the rules now agree with
+    /// the dictionary. Existing manual singing groups and their IDs remain untouched.
+    public static func repairAutomaticSegmentation(in song: inout SongDocument, phraseIDs: Set<UUID>? = nil) {
+        for word in song.words {
+            guard phraseIDs?.contains(word.parentPhraseID) ?? true,
+                  let phrase = song.phrase(word.parentPhraseID), supports(song.language(of: phrase)),
+                  song.canRepairPronunciationStructure(word) else { continue }
+            let old = song.syllables(in: word)
+            let revised = Syllabifier.syllabify(word.surface, language: "en").syllables
+            guard old.count != revised.count, dictionarySyllableCounts(for: word.surface).contains(revised.count),
+                  old.map(\.text.value).joined().lowercased() == revised.joined().lowercased() else { continue }
+            // resyllabify is safe after checking references and manual fields above.
+            try? song.resyllabify(wordID: word.id, language: "en")
+        }
+    }
+
     /// Used only while creating syllables, never to resize an existing saved word.
     public static func dictionarySyllableCounts(for surface: String) -> Set<Int> {
         Set(phones(for: surface).map { splitPhones($0).count })
@@ -259,6 +310,14 @@ public enum EnglishPronunciation {
                     }
                 }
                 guard let candidate = candidate(for: word.surface, texts: texts, currentIPA: current.map(\.ipa.value), style: style) else {
+                    let whole = wholeCandidates(for: word.surface, style: style)
+                    let keys = Set(whole.map { comparableIPA($0.ipa.joined()) })
+                    if keys.count == 1, let first = whole.first,
+                       !current.contains(where: { $0.ipa.userEdited || $0.reading.userEdited }) {
+                        let before = song.word(word.id)?.wholePronunciation
+                        storeWhole(first.ipa.joined(), wordID: word.id, source: source, in: &song)
+                        if before != song.word(word.id)?.wholePronunciation { report.changedWords += 1 }
+                    }
                     report.review(word.surface); continue
                 }
                 var changed = false, protected = false

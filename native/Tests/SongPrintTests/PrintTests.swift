@@ -6,6 +6,19 @@ import Testing
 
 @MainActor
 struct PrintTests {
+    @Test func wholeWordFallbackAppearsWithWarningInPDFAndWord() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "expression", language: "en", syllabify: true)
+        try song.setSyllables(wordID: song.words[0].id, texts: ["ex", "pres", "si", "on"])
+        EnglishPronunciation.apply(to: &song)
+        let sheet = PrintSheet(song: song)
+        #expect(sheet.phrases[0].words[0].reading.contains("音節対応は要確認"))
+        #expect(!sheet.phrases[0].words[0].ipa.isEmpty)
+        let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
+        #expect(pdf.string?.contains("音節対応は要確認") == true)
+        #expect(try !WordSheet.render(sheet).isEmpty)
+    }
+
     @Test func meaningCanMoveBelowWithoutChangingLineSpacing() throws {
         var song = try #require(SampleCatalog.entries.first { $0.id == "ninth" }).make()
         NinthPronunciation.apply(.stage, to: &song)

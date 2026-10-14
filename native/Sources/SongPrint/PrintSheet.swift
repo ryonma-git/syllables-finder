@@ -201,14 +201,13 @@ public struct PrintSheet: Sendable {
                             translation: phrase.translation.value,
                             words: song.words(in: phrase).map { word in
                     let syllables = song.syllables(in: word)
+                    let pronunciation = song.pronunciationDisplay(for: word)
                     return PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
                                      syllables: syllables.map {
                                          PrintSyllable(text: $0.text.value, language: phrase.language ?? song.metadata.sourceLanguage)
                                      },
-                                     ipa: syllables.isEmpty || syllables.contains(where: { $0.ipa.value.isEmpty })
-                                        ? "" : syllables.map(\.ipa.value).joined(separator: "·").wrappedInSlashes,
-                                     reading: syllables.allSatisfy { $0.reading.value.isEmpty }
-                                        ? "" : syllables.map { $0.reading.value.isEmpty ? "□" : $0.reading.value }.joined(separator: "・"))
+                                     ipa: pronunciation.ipa.wrappedInSlashes,
+                                     reading: pronunciation.reading + (pronunciation.notice == nil ? "" : "\n（音節対応は要確認）") + (pronunciation.reviewNotice.map { "\n（" + $0 + "）" } ?? ""))
                 })
             }
         }

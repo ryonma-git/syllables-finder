@@ -131,6 +131,8 @@ struct EnglishPronunciationTests {
         song.appendPhrase(text: "the", language: "fr", syllabify: true)
         let before = song
         #expect(EnglishPronunciation.apply(to: &song).reviewWords == 1)
-        #expect(song == before)
+        #expect(song.syllables == before.syllables && song.alignments == before.alignments)
+        #expect(song.words[0].wholePronunciation != nil)
+        #expect(song.words[1] == before.words[1])
     }
 }

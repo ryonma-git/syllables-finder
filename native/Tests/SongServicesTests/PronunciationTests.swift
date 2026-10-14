@@ -55,7 +55,7 @@ struct PronunciationTests {
         #expect(result.alignments == song.alignments)
     }
 
-    @Test func modelSeesWholeWordContextWithoutOrderedHomographBias() async throws {
+    @Test func modelSeesContextAndDictionaryAlternatives() async throws {
         var song = SongDocument()
         song.appendPhrase(text: "the wind", language: "en", syllabify: true)
         let session = session { request in
@@ -65,7 +65,7 @@ struct PronunciationTests {
             #expect(input["context"] as? String == "the wind")
             let words = input["words"] as! [[String: Any]]
             #expect(words.count == 1 && words[0]["surface"] as? String == "wind")
-            #expect(words[0]["dictionaryIPA"] == nil)
+            #expect((words[0]["dictionaryIPA"] as? [String])?.count == 2)
             return try Self.response(input: words, wordIPA: "wɪnd", syllableIPA: "wɪnd", reading: "ウィンド")
         }
         defer { session.invalidateAndCancel() }
@@ -88,9 +88,14 @@ struct PronunciationTests {
             }
             defer { session.invalidateAndCancel() }
             let result = try await OllamaPronunciationProvider(model: "test", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
-            #expect(result.issues.count == 1)
-            #expect(!result.issues[0].reason.isEmpty)
-            #expect(result.document.syllables[0].ipa.value.isEmpty)
+            if full == "wɪnd" {
+                // Dictionary phones supersede the model's malformed per-syllable spelling.
+                #expect(result.issues.isEmpty)
+                #expect(EnglishPronunciation.comparableIPA(result.document.syllables[0].ipa.value) == "wɪnd")
+            } else {
+                #expect(result.issues.count == 1)
+                #expect(result.document.syllables[0].ipa.value.isEmpty)
+            }
             #expect(song.syllables[0].ipa.value.isEmpty)
         }
     }
@@ -113,12 +118,12 @@ struct PronunciationTests {
         }
         defer { session.invalidateAndCancel() }
         let ids = song.phrases.map(\.id)
-        try await PronunciationCompletion(session: session).run(phraseIDs: ids, current: { song }, apply: { result, snapshot, id in
+        try await PronunciationCompletion(session: session).run(phraseIDs: ids, verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
             PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
         }, progress: { _ in })
         #expect(song.syllables(in: song.words[0]).map(\.reading.value).joined() == "ウィンド")
         #expect(PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids)).map(\.surface) == ["Zorava"])
-        #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 2)
+        #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 3) // discovery, normal, one whole-word retry
     }
 
     @Test @MainActor func alreadyCompleteDocumentDoesNotContactOllama() async throws {
@@ -126,7 +131,7 @@ struct PronunciationTests {
         song.appendPhrase(text: "The sun", language: "en", syllabify: true)
         let session = session { _ in throw ProviderError.unavailable("Must not connect") }
         defer { session.invalidateAndCancel() }
-        try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id), current: { song },
+        try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id), verifyCandidates: false, current: { song },
             apply: { _, _, _ in Issue.record("Should not apply anything") }, progress: { _ in })
         #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 0)
     }
@@ -149,7 +154,7 @@ struct PronunciationTests {
         let session = session { _ in throw URLError(.cannotConnectToHost) }
         defer { session.invalidateAndCancel() }
         do {
-            try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id), current: { song },
+            try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id), verifyCandidates: false, current: { song },
                 apply: { _, _, _ in Issue.record("Failure must not apply a result") }, progress: { _ in })
             Issue.record("Expected a connection error")
         } catch { #expect(error is URLError) }
@@ -189,7 +194,7 @@ struct PronunciationTests {
         defer { session.invalidateAndCancel() }
         let clients = [ModelClient(.ollama("offline"), session: session), ModelClient(.ollama("good"), session: session)]
         let ids = song.phrases.map(\.id)
-        try await PronunciationCompletion(session: session).run(phraseIDs: ids, clients: clients, current: { song }, apply: { result, snapshot, id in
+        try await PronunciationCompletion(session: session).run(phraseIDs: ids, clients: clients, verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
             PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
         }, progress: { _ in })
         #expect(PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids)).isEmpty)
@@ -298,7 +303,7 @@ struct PronunciationTests {
         }
         defer { session.invalidateAndCancel() }
         let issues = try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id),
-            clients: [ModelClient(.ollama("test"), session: session)], current: { song }, apply: { result, snapshot, id in
+            clients: [ModelClient(.ollama("test"), session: session)], verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
                 PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
             }, progress: { _ in })
         #expect(issues.map(\.surface) == ["on"])
@@ -321,7 +326,7 @@ struct PronunciationTests {
         }
         defer { session.invalidateAndCancel() }
         let issues = try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id),
-            clients: [ModelClient(.ollama("test"), session: session)], current: { song }, apply: { result, snapshot, id in
+            clients: [ModelClient(.ollama("test"), session: session)], verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
                 PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
             }, progress: { _ in })
         #expect(issues.map(\.surface) == ["on"])
@@ -340,7 +345,7 @@ struct PronunciationTests {
         }
         defer { session.invalidateAndCancel() }
         let issues = try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id),
-            clients: ["first", "second"].map { ModelClient(.ollama($0), session: session) }, current: { song }, apply: { result, snapshot, id in
+            clients: ["first", "second"].map { ModelClient(.ollama($0), session: session) }, verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
                 PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
             }, progress: { _ in })
         #expect(issues.isEmpty)
@@ -382,6 +387,129 @@ struct PronunciationTests {
         #expect(result.issues.map(\.surface) == ["on"])
         #expect(result.document.syllables[0].ipa.value.isEmpty)
         #expect(result.document.syllables.last!.reading.value == "ウィンド")
+    }
+
+    @Test func dictionarySelectionIgnoresBrokenGeneratedSyllables() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "wind", language: "en", syllabify: true)
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let messages = body["messages"] as! [[String: String]]
+            let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+            let word = (input["words"] as! [[String: Any]])[0]
+            let options = word["dictionaryIPA"] as! [String]
+            let choice = try #require(options.firstIndex { EnglishPronunciation.comparableIPA($0) == "wɪnd" })
+            let output = try JSONSerialization.data(withJSONObject: ["words": [["id": 0, "dictionaryChoice": choice, "ipa": "broken", "syllables": []]]])
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": String(decoding: output, as: UTF8.self)]])
+        }
+        defer { session.invalidateAndCancel() }
+        let result = try await OllamaPronunciationProvider(model: "test", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
+        #expect(result.issues.isEmpty)
+        #expect(result.document.syllables[0].reading.value == "ウィンド")
+        #expect(result.document.words[0].wholePronunciation?.source.model == "test")
+    }
+
+    @Test func unknownWordRetainsWholeIPAWhenSyllableAllocationFails() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Zorava", language: "en", syllabify: true)
+        let session = session { _ in
+            let output = #"{"words":[{"id":0,"ipa":"zoʊrɑvə","syllables":[]}]}"#
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": output]])
+        }
+        defer { session.invalidateAndCancel() }
+        let result = try await OllamaPronunciationProvider(model: "test", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
+        let display = result.document.pronunciationDisplay(for: result.document.words[0])
+        #expect(display.ipa == "zoʊrɑvə")
+        #expect(!display.reading.isEmpty && display.notice != nil)
+        #expect(result.document.syllables == song.syllables)
+        #expect(PronunciationAudit.entries(in: result.document)[0].status == .review)
+    }
+
+    @Test func discoveryIncludesOtherInstalledModelsAndKeepsExplicitPriority() async throws {
+        let session = session { _ in Data(#"{"models":[{"name":"qwen3.5:9b"},{"name":"other:8b"},{"name":"qwen3.5:9b"}]}"#.utf8) }
+        defer { session.invalidateAndCancel() }
+        var preferences = ModelPreferences(); preferences.mode = .local; preferences.localModel = "qwen3.5:9b"
+        let clients = await ModelDiscovery.clients(preferences: preferences, apiKey: "", session: session)
+        #expect(clients.prefix(2).map(\.label) == ["Ollama · qwen3.5:9b", "Ollama · other:8b"])
+        #expect(clients.filter { if case .api = $0.backend { true } else { false } }.isEmpty)
+    }
+
+    @Test @MainActor func automaticVerificationUsesOtherModelAndFallsBackToSameModel() async throws {
+        for multiple in [true, false] {
+            var song = SongDocument()
+            song.appendPhrase(text: "the wind", language: "en", syllabify: true)
+            let session = session { request in
+                let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+                let messages = body["messages"] as! [[String: String]]
+                let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+                let words = input["words"] as! [[String: Any]]
+                if words[0]["readings"] != nil {
+                    #expect(body["model"] as? String == (multiple ? "reviewer" : "generator"))
+                    let output = #"{"words":[{"id":0,"verdict":"review","explanation":"文脈を確認してください","expectedIPA":"wɪnd"}]}"#
+                    return try JSONSerialization.data(withJSONObject: ["message": ["content": output]])
+                }
+                return try Self.response(input: words, wordIPA: "wɪnd", syllableIPA: "wɪnd", reading: "")
+            }
+            defer { session.invalidateAndCancel() }
+            let clients = (multiple ? ["generator", "reviewer"] : ["generator"]).map { ModelClient(.ollama($0), session: session) }
+            let issues = try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id),
+                clients: clients, current: { song }, apply: { result, snapshot, id in
+                    PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
+                }, progress: { _ in })
+            #expect(issues.count == 1)
+            #expect(song.pronunciationDisplay(for: song.words[1]).reviewNotice == "AI検証：要確認")
+            #expect(song.words[1].wholePronunciation?.verification?.reviewer == "Ollama · " + (multiple ? "reviewer" : "generator"))
+            #expect(song.words[1].wholePronunciation?.verification?.explanation.contains(multiple ? "別モデル" : "同じモデル") == true)
+            let reopened = try SongDocument.decode(song.encoded())
+            #expect(reopened.pronunciationDisplay(for: reopened.words[1]).reviewNotice != nil)
+            let recheck = self.session { _ in
+                let output = #"{"words":[{"id":0,"verdict":"ok","explanation":"文脈と辞書に一致しています","expectedIPA":"wɪnd"}]}"#
+                return try JSONSerialization.data(withJSONObject: ["message": ["content": output]])
+            }
+            defer { recheck.invalidateAndCancel() }
+            var verdict: PronunciationReview.Result.Verdict?
+            try await PronunciationReview.run(document: reopened, clients: [ModelClient(.ollama("reviewer"), session: recheck)],
+                wordIDs: [reopened.words[1].id], update: { _, result in verdict = result.verdict }, progress: { _ in })
+            #expect(verdict == .ok) // A previous AI warning cannot force review forever.
+            song.phrases[0].originalText = "Changed context"
+            #expect(song.pronunciationDisplay(for: song.words[1]).reviewNotice == nil)
+        }
+    }
+
+    @Test @MainActor func failedAllocationRetriesWithoutSpellingGroups() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Zorava", language: "en", syllabify: true)
+        let original = song
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let messages = body["messages"] as! [[String: String]]
+            let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+            let words = input["words"] as! [[String: Any]]
+            let groups = words[0]["syllables"] as! [[String: Any]]
+            return try Self.response(input: words, wordIPA: groups.isEmpty ? "zoʊrɑvə" : "", syllableIPA: "", reading: "")
+        }
+        defer { session.invalidateAndCancel() }
+        let issues = try await PronunciationCompletion(session: session).run(phraseIDs: song.phrases.map(\.id),
+            clients: [ModelClient(.ollama("test"), session: session)], verifyCandidates: false, current: { song },
+            apply: { result, snapshot, id in PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song) }, progress: { _ in })
+        #expect(song.syllables == original.syllables)
+        #expect(song.pronunciationDisplay(for: song.words[0]).ipa == "zoʊrɑvə")
+        #expect(song.pronunciationDisplay(for: song.words[0]).notice != nil)
+        #expect(issues.count == 1)
+    }
+
+    @Test func conflictingWholeAndPartsNeverBecomeAWholeWordFallback() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Zorava", language: "en", syllabify: true)
+        let session = session { _ in
+            let output = #"{"words":[{"id":0,"ipa":"zoʊ","syllables":[{"id":0,"ipa":"zoʊ","reading":""},{"id":1,"ipa":"rɑ","reading":""},{"id":2,"ipa":"və","reading":""}]}]}"#
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": output]])
+        }
+        defer { session.invalidateAndCancel() }
+        let result = try await OllamaPronunciationProvider(model: "test", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
+        #expect(result.document.words[0].wholePronunciation == nil)
+        #expect(result.document.syllables.allSatisfy { $0.ipa.value.isEmpty })
+        #expect(result.issues.count == 1)
     }
 
     private static func body(_ request: URLRequest) throws -> Data {

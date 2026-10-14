@@ -22,6 +22,7 @@ public enum EnglishPronunciationStyle: String, Codable, CaseIterable, Sendable {
         var protected = Set<UUID>()
         for word in song.words where englishIDs.contains(word.parentPhraseID) {
             let units = song.syllables(in: word)
+            if let index = song.words.firstIndex(where: { $0.id == word.id }) { song.words[index].wholePronunciation = nil }
             guard !word.structureUserEdited, units.allSatisfy({
                 !$0.structureUserEdited && !$0.text.userEdited && !$0.ipa.userEdited && !$0.reading.userEdited && !$0.stress.userEdited
                     && $0.moraIDs.isEmpty && $0.phonemeIDs.isEmpty

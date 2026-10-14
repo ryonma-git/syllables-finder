@@ -184,8 +184,10 @@ public enum ModelDiscovery {
         var local = [ModelClient]()
         if ModelClient.appleAvailability.available { local.append(ModelClient(.apple, session: session)) }
         let chosen = models.contains(preferences.localModel) ? preferences.localModel : PronunciationCompletion.model(from: models) ?? models.first
-        if let chosen { local.append(ModelClient(.ollama(chosen), session: session)) }
-        if preferences.mode == .local { local.reverse() }
+        let localModels = (chosen.map { [$0] } ?? []) + Set(models).sorted().filter { $0 != chosen }
+        let localClients = localModels.map { ModelClient(.ollama($0), session: session) }
+        if preferences.mode == .local { local.insert(contentsOf: localClients, at: 0) }
+        else { local += localClients }
         if preferences.api.enabled, !apiKey.isEmpty, !preferences.api.model.isEmpty {
             let api = ModelClient(.api(preferences.api, key: apiKey), session: session)
             if preferences.mode == .api { local.insert(api, at: 0) } else { local.append(api) }

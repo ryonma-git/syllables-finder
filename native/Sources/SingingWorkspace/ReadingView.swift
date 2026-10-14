@@ -108,6 +108,7 @@ struct ReadingView: View {
                 .help("曲全体の英語の発音基準。手修正は保持します。辞書にない語は未設定になり、AIで補完できます。カタカナは近似です。")
             Button("英語の発音を整える", systemImage: "character.book.closed") {
                 mutate("英語の発音を整える") {
+                    EnglishPronunciation.repairAutomaticSegmentation(in: &$0)
                     let report = EnglishPronunciation.apply(to: &$0)
                     pronunciationReport = report
                     pronunciationPendingRevision = report.changedWords > 0 ? $0.revision &+ 1 : nil
@@ -164,12 +165,12 @@ struct ReadingView: View {
                         session.wordID = word.id; session.syllableID = nil; session.showInspector = true
                     } label: {
                         InterlinearWord(word: word, syllables: song.syllables(in: word),
-                                        language: phrase.language ?? song.metadata.sourceLanguage,
+                                        language: phrase.language ?? song.metadata.sourceLanguage, pronunciation: song.pronunciationDisplay(for: word),
                                         selected: session.wordID == word.id, scale: session.textScale,
                                         elements: elements)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.syllables(in: word).map(\.reading.value).joined(separator: "・"))、詳細を編集")
+                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.pronunciationDisplay(for: word).reading)、詳細を編集")
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -194,16 +195,15 @@ private struct InterlinearWord: View {
     let word: Word
     let syllables: [Syllable]
     let language: String
+    let pronunciation: PronunciationDisplay
     let selected: Bool
     let scale: Double
     let elements: [ReadingElement]
     private var printWord: PrintWord {
         PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
                   syllables: syllables.map { PrintSyllable(text: $0.text.value, language: language) },
-                  ipa: syllables.isEmpty || syllables.contains(where: { $0.ipa.value.isEmpty }) ? "" :
-                    "/" + syllables.map(\.ipa.value).joined(separator: "·") + "/",
-                  reading: syllables.allSatisfy { $0.reading.value.isEmpty } ? "" :
-                    syllables.map { $0.reading.value.isEmpty ? "□" : $0.reading.value }.joined(separator: "・"))
+                  ipa: pronunciation.ipa.isEmpty ? "" : "/" + pronunciation.ipa + "/",
+                  reading: pronunciation.reading)
     }
     private var columnWidth: CGFloat {
         let item = printWord
@@ -231,6 +231,14 @@ private struct InterlinearWord: View {
                 case .meaning: meaning
                 case .translation: EmptyView()
                 }
+            }
+            if let notice = pronunciation.notice {
+                Text(notice).font(.system(size: 10 * scale)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let notice = pronunciation.reviewNotice {
+                Text(notice).font(.system(size: 10 * scale)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Rectangle().fill(selected ? Color.teal : .clear).frame(height: 2 * scale)
         }
@@ -295,6 +303,13 @@ struct WordInspector: View {
                 Text("ことばの詳細").font(.headline)
                 if let wordID, let word = song.word(wordID) {
                     Text(word.surface).font(.title2.bold())
+                    if let whole = song.pronunciationDisplay(for: word).whole {
+                        Text("単語全体：/" + whole.ipa + "/　" + whole.reading).textSelection(.enabled)
+                        if let notice = song.pronunciationDisplay(for: word).notice { Text(notice).foregroundStyle(.orange) }
+                        if let review = whole.verification {
+                            Text("AI検証（" + review.reviewer + "）：" + review.explanation).font(.caption).textSelection(.enabled)
+                        }
+                    }
                     SyllableSplitEditor(song: song, word: word, mutate: mutate).id(word.id)
                     field("文脈での意味", word: word, keyPath: \.contextualMeaning)
                     field("辞書の意味", word: word, keyPath: \.dictionaryMeaning)

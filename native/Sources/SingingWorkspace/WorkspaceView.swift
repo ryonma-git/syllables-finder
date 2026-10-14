@@ -238,7 +238,7 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $showingPronunciationIssues) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("発音を保留した語").font(.title2.bold())
+                Text("発音の確認事項").font(.title2.bold())
                 Text("反映できた結果は保存しています。下の語は現在の内容を保持しています。区切り・発音を確認して、必要に応じて再度補完してください。")
                 List(pronunciationIssues) { issue in
                     VStack(alignment: .leading, spacing: 5) {
@@ -260,7 +260,22 @@ struct WorkspaceView: View {
         }
         .onDisappear { stopPlayback(); stopPronunciation() }
         .sheet(isPresented: $showingPronunciationCheck) {
-            PronunciationReviewSheet(song: song, settings: modelSettings) { entry in
+            PronunciationReviewSheet(song: song, settings: modelSettings, saveReviews: { snapshot, reviews in
+                guard !reviews.isEmpty else { return }
+                mutate("発音の検証結果を保存") { current in
+                    var checked = snapshot
+                    for (id, review) in reviews {
+                        guard let index = checked.words.firstIndex(where: { $0.id == id }) else { continue }
+                        let word = checked.words[index]
+                        checked.words[index].wholePronunciation?.verification = .init(reviewer: review.reviewer,
+                            verdict: review.verdict.rawValue, explanation: review.kind.label + "。" + review.explanation,
+                            context: snapshot.phrase(word.parentPhraseID)?.originalText)
+                    }
+                    for phrase in snapshot.phrases {
+                        PronunciationCompletion.merge(checked, from: snapshot, phraseID: phrase.id, into: &current)
+                    }
+                }
+            }) { entry in
                 session.phraseID = entry.phraseID; session.wordID = entry.id; session.showInspector = true
                 showingPronunciationCheck = false
             }
@@ -547,7 +562,10 @@ struct WorkspaceView: View {
         pronunciationIssues = []
         let ids = Set(phraseIDs)
         mutate("辞書で補完") {
-            if pronunciation { EnglishPronunciation.apply(to: &$0, phraseIDs: ids) }
+            if pronunciation {
+                EnglishPronunciation.repairAutomaticSegmentation(in: &$0, phraseIDs: ids)
+                EnglishPronunciation.apply(to: &$0, phraseIDs: ids)
+            }
             if meanings { DictionaryLookup.apply(to: &$0, phraseIDs: ids) }
         }
         let missingSounds = pronunciation && !PronunciationCompletion.missingWords(in: song, phraseIDs: ids).isEmpty
@@ -559,7 +577,11 @@ struct WorkspaceView: View {
         func remainingStatus() -> String {
             var parts: [String] = []
             if pronunciation {
-                parts.append("発音 \(PronunciationCompletion.missingWords(in: file.song, phraseIDs: ids).count)語")
+                let pending = PronunciationCompletion.missingWords(in: file.song, phraseIDs: ids)
+                let wholeOnly = pending.filter { file.song.pronunciationDisplay(for: $0).notice != nil }.count
+                parts.append("発音 \(pending.count - wholeOnly)語（別に音節対応の要確認 \(wholeOnly)語）")
+                let reviewCount = file.song.words.filter { ids.contains($0.parentPhraseID) && file.song.pronunciationDisplay(for: $0).reviewNotice != nil }.count
+                if reviewCount > 0 { parts.append("AI検証の要確認 \(reviewCount)語") }
             }
             if meanings {
                 let count = MeaningCompletion.missing(in: file.song, phraseIDs: ids)

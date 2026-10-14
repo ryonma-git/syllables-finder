@@ -86,6 +86,30 @@ public struct Word: Codable, Equatable, Identifiable, Sendable {
     public init(id: UUID = UUID(), parentPhraseID: UUID, surface: String, syllableIDs: [UUID] = []) {
         self.id = id; self.parentPhraseID = parentPhraseID; self.surface = surface; self.syllableIDs = syllableIDs
     }
+    /// Independent of singing groups. Optional so older documents still decode unchanged.
+    public var wholePronunciation: WholePronunciation?
+}
+
+public struct WholePronunciation: Codable, Equatable, Sendable {
+    public var surface: String
+    public var style: EnglishPronunciationStyle
+    public var ipa: String
+    public var reading: String
+    public var source: FieldSource
+    public var verification: PronunciationVerification?
+    public init(surface: String, style: EnglishPronunciationStyle, ipa: String, reading: String, source: FieldSource) {
+        self.surface = surface; self.style = style; self.ipa = ipa; self.reading = reading; self.source = source
+    }
+}
+
+public struct PronunciationVerification: Codable, Equatable, Sendable {
+    public var reviewer: String
+    public var verdict: String
+    public var explanation: String
+    public var context: String?
+    public init(reviewer: String, verdict: String, explanation: String, context: String? = nil) {
+        self.reviewer = reviewer; self.verdict = verdict; self.explanation = explanation; self.context = context
+    }
 }
 
 public struct Syllable: Codable, Equatable, Identifiable, Sendable {

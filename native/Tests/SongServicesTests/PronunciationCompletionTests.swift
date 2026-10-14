@@ -4,6 +4,28 @@ import SongCore
 @testable import SongServices
 
 struct PronunciationCompletionTests {
+    @Test func structuralMergeRejectsConcurrentAlignmentButPreservesUnrelatedEdits() throws {
+        var original = SongDocument()
+        original.appendPhrase(text: "expression", language: "en", syllabify: true)
+        let wordID = original.words[0].id
+        original.syllables = ["ex", "pres", "si", "on"].map { Syllable(parentWordID: wordID, text: $0) }
+        original.words[0].syllableIDs = original.syllables.map(\.id)
+        var result = original
+        EnglishPronunciation.repairAutomaticSegmentation(in: &result)
+        EnglishPronunciation.apply(to: &result)
+        var current = original
+        current.metadata.title = "編集中の曲名"
+        PronunciationCompletion.merge(result, from: original, phraseID: original.phrases[0].id, into: &current)
+        #expect(current.syllables.count == 3 && current.metadata.title == "編集中の曲名")
+        try current.validate()
+        current = original
+        current.alignments = [.init(languageTargets: [.init(.syllable, current.syllables[0].id)],
+            musicTargets: [.timeRange(.init(start: .zero, end: try Beat(1)))], relation: .manual)]
+        let protected = current
+        PronunciationCompletion.merge(result, from: original, phraseID: original.phrases[0].id, into: &current)
+        #expect(current == protected)
+    }
+
     @Test func choosesInstalledQwenWithoutSilentlySwitchingFamilies() {
         #expect(PronunciationCompletion.model(from: ["llama3.1:8b"]) == nil)
         #expect(PronunciationCompletion.model(from: ["qwen3.5:35b", "qwen3.5:9b"]) == "qwen3.5:9b")
@@ -64,7 +86,7 @@ struct PronunciationCompletionTests {
         let original = song
         let ids = song.phrases.map(\.id)
         let clients = await ModelDiscovery.clients(preferences: ModelPreferences(), apiKey: "")
-        try await PronunciationCompletion().run(phraseIDs: ids, clients: clients, current: { song }, apply: { result, snapshot, id in
+        try await PronunciationCompletion().run(phraseIDs: ids, clients: clients, verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
             PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
         }, progress: { print($0) })
         #expect(PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids)).isEmpty)
@@ -83,7 +105,7 @@ struct PronunciationCompletionTests {
         let ids = song.phrases.map(\.id)
         #expect(!PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids)).isEmpty)
         let clients = await ModelDiscovery.clients(preferences: ModelPreferences(), apiKey: "")
-        try await PronunciationCompletion().run(phraseIDs: ids, clients: clients, current: { song }, apply: { result, snapshot, id in
+        try await PronunciationCompletion().run(phraseIDs: ids, clients: clients, verifyCandidates: false, current: { song }, apply: { result, snapshot, id in
             PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &song)
         }, progress: { print($0) })
         let missing = PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids))

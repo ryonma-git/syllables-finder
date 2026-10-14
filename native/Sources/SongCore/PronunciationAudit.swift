@@ -34,17 +34,21 @@ public enum PronunciationAudit {
     }
     private static func kanaKey(_ value: String) -> String { value.filter { !" ・·\n\t".contains($0) } }
 
-    public static func entries(in song: SongDocument) -> [Entry] {
+    public static func entries(in song: SongDocument, includeSavedReview: Bool = true) -> [Entry] {
         let style = song.metadata.englishPronunciationStyle
         return song.phrases.flatMap { phrase in
             song.words(in: phrase).map { word in
                 let units = song.syllables(in: word)
-                let ipa = units.map(\.ipa.value), kana = units.map(\.reading.value)
+                let display = song.pronunciationDisplay(for: word)
+                let ipa = display.notice != nil ? [display.ipa] : units.map(\.ipa.value)
+                let kana = display.notice != nil ? [display.reading] : units.map(\.reading.value)
                 let english = EnglishPronunciation.supports(song.language(of: phrase))
                 let dictionary = english ? EnglishPronunciation.dictionaryIPA(for: word.surface, style: style) : []
                 var issues: [String] = []
-                let missing = units.isEmpty || (ipa + kana).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                let missing = ipa.isEmpty || (ipa + kana).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 if missing { issues.append("IPAまたはカタカナが未設定です。") }
+                if let notice = display.notice { issues.append(notice) }
+                if includeSavedReview, let notice = display.reviewNotice { issues.append(notice) }
                 if english {
                     let counts = EnglishPronunciation.dictionarySyllableCounts(for: word.surface)
                     if !counts.isEmpty, !counts.contains(units.count) {
@@ -75,7 +79,7 @@ public enum PronunciationAudit {
                         }
                     }
                 }
-                let sources = units.flatMap { [$0.ipa.source, $0.reading.source] }.filter { $0.kind == .ai }
+                let sources = (units.flatMap { [$0.ipa.source, $0.reading.source] } + (display.whole.map { [$0.source] } ?? [])).filter { $0.kind == .ai }
                 return Entry(id: word.id, phraseID: phrase.id, surface: word.surface, context: phrase.originalText,
                              ipa: ipa, readings: kana, dictionaryIPA: dictionary, issues: issues,
                              status: missing ? .missing : !english ? .unsupported : !issues.isEmpty ? .review : dictionary.isEmpty ? .absent : .matched,

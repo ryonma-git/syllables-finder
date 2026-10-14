@@ -258,6 +258,21 @@ public enum Syllabifier {
         var (nuclei, note) = orthographicNuclei(in: &letters, language: language)
         if language == "en" {
             let counts = EnglishPronunciation.dictionarySyllableCounts(for: core)
+            // Internal silent e and compressed -ery: reduce only with unanimous dictionary
+            // evidence. No arbitrary merging to force an unrelated spelling to fit a count.
+            if counts.count == 1, let target = counts.first, target < nuclei.count {
+                for index in nuclei.indices.reversed() where nuclei.count > target {
+                    let range = nuclei[index]
+                    guard index > 0, range.count == 1, letters[range.lowerBound].base == "e",
+                          range.upperBound < letters.count else { continue }
+                    let prefix = String(letters[...range.lowerBound].map(\.base))
+                    let suffix = String(letters[range.upperBound...].map(\.base))
+                    let silentBase = EnglishPronunciation.dictionarySyllableCounts(for: prefix) == [index]
+                    if (silentBase && (suffix.hasPrefix("ly") || suffix.hasPrefix("liness"))) || suffix.hasPrefix("ry") {
+                        nuclei.remove(at: index)
+                    }
+                }
+            }
             // Written adjacent vowels can be hiatus, e.g. qui-et-ly. Only expand when
             // all dictionary variants agree; the original spelling remains unchanged.
             if counts.count == 1, let target = counts.first, target > nuclei.count,
@@ -342,7 +357,7 @@ public enum Syllabifier {
                 }
                 // The i in the common -tion ending belongs to the consonant, not a new vowel.
                 // "cation" is an exception (cat-i-on); creation's e-a hiatus is handled below.
-                if language == "en", base == "i", previous == "t",
+                if language == "en", base == "i", previous == "t" || previous == "s",
                    ["ion", "ions"].contains(String(letters[i...].map(\.base))),
                    !["cation", "cations"].contains(String(letters.map(\.base))) {
                     letters[i].vowel = false
