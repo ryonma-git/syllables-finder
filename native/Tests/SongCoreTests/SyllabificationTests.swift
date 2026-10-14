@@ -7,6 +7,14 @@ struct SyllabificationTests {
         Syllabifier.syllabify(word, language: language).syllables.joined(separator: "-")
     }
 
+    @Test func silentEAfterVowelYAgreesWithDictionary() {
+        for (word, expected) in [("goodbye", "good-bye"), ("\"goodbye\"", "good-bye"), ("bye", "bye"), ("dye", "dye"), ("rye", "rye")] {
+            #expect(split(word, "en") == expected)
+            #expect(EnglishPronunciation.dictionarySyllableCounts(for: word).contains(Syllabifier.syllabify(word, language: "en").syllables.count))
+        }
+        #expect(split("quiet", "en") == "qui-et")
+    }
+
     @Test func german() {
         let expected = [
             "Freude": "Freu-de", "schöner": "schö-ner", "Götterfunken,": "Göt-ter-fun-ken", "Tochter": "Toch-ter",

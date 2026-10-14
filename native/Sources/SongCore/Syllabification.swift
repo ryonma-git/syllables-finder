@@ -371,7 +371,11 @@ public enum Syllabifier {
             let tail = String(letters[last.lowerBound...].map(\.base))
             let before = last.lowerBound > 0 ? letters[last.lowerBound - 1] : nil
             if language == "en" && !syllabicLE(letters, nucleus: last) && last.count == 1 && letters[last.lowerBound].base == "e"
-                && ["e", "es", "ed"].contains(tail) && before.map({ !$0.vowel }) == true {
+                && ["e", "es", "ed"].contains(tail)
+                && (before.map({ !$0.vowel }) == true ||
+                    (before?.base == "y" && EnglishPronunciation.dictionarySyllableCounts(for: String(letters.map(\.base))) == [nuclei.count - 1])) {
+                // In bye / goodbye the y is a vowel, but the final e is still silent.
+                // Require dictionary agreement before merging this written vowel pair.
                 let previousTwo = last.lowerBound > 1 ? String([letters[last.lowerBound - 2].base, letters[last.lowerBound - 1].base]) : ""
                 let sibilant = before.map { "sxzcg".contains($0.base) } == true || ["sh", "ch"].contains(previousTwo)
                 let dental = before.map { "td".contains($0.base) } == true

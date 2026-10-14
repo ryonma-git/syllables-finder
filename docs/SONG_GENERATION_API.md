@@ -26,7 +26,7 @@ native/.build/debug/SongGenerateTool /absolute/path/input.json /absolute/path/Pr
 native/.build/debug/SongGenerateTool /absolute/path/input.json /absolute/path/Practice-annotated.songproj --ollama qwen3.5:9b
 ```
 
-既存の `.songproj` は上書きしません。途中で解析に失敗した場合も曲ファイルは作成しません。正常終了時は保存先と行・語・音節数をJSONで返します。入力には歌詞本文が含まれるので、Git管理外に置いてください。
+既存の `.songproj` は上書きしません。入力・意味解析・保存の失敗時は曲ファイルを作成しません。発音の不整合は語ごとに保留し、残りの処理と保存を継続します。発音の接続失敗・読めない応答もその行の現在の発音を保持して後続行へ進みます。保留・失敗がある場合は曲ファイル内の `pronunciation-warnings.json` に行番号・語・理由を保存し、曲のメモにも件数を記載します。正常終了時は保存先と行・語・音節数、`pronunciationWarnings` 件数をJSONで返します。終了コード0はファイル作成の成功を示し、発音の全項目が完成したことを意味しません。入力には歌詞本文が含まれるので、Git管理外に置いてください。
 
 ## HTTP API
 

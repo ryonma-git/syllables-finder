@@ -88,6 +88,8 @@ struct WorkspaceView: View {
     @State private var pronunciationTask: Task<Void, Never>?
     @State private var pronunciationRun: UUID?
     @State private var pronunciationStatus: String?
+    @State private var pronunciationIssues: [PronunciationIssue] = []
+    @State private var showingPronunciationIssues = false
     @State private var pendingMIDI: PendingMIDIImport?
     private var song: SongDocument { file.song }
     private var phrase: Phrase? { session.phraseID.flatMap { song.phrase($0) } ?? song.phrases.first }
@@ -102,6 +104,9 @@ struct WorkspaceView: View {
                         if pronunciationRun != nil { ProgressView().controlSize(.small) }
                         Text(pronunciationStatus).font(.callout).textSelection(.enabled)
                         Spacer(minLength: 8)
+                        if !pronunciationIssues.isEmpty {
+                            Button("保留の理由（\(pronunciationIssues.count)語）") { showingPronunciationIssues = true }
+                        }
                         Button("AI接続") { showingModels = true }
                         if pronunciationRun != nil {
                             Button("中止") { stopPronunciation() }
@@ -231,7 +236,21 @@ struct WorkspaceView: View {
                 if let position = session.guide.position { session.position = position }
             }
         }
-        .onChange(of: song.id) { _, _ in stopPronunciation(); pronunciationStatus = nil }
+        .sheet(isPresented: $showingPronunciationIssues) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("発音を保留した語").font(.title2.bold())
+                Text("反映できた結果は保存しています。下の語は現在の内容を保持しています。区切り・発音を確認して、必要に応じて再度補完してください。")
+                List(pronunciationIssues) { issue in
+                    VStack(alignment: .leading, spacing: 5) {
+                        let line = song.phrases.firstIndex { $0.id == issue.phraseID }.map { $0 + 1 }
+                        Text("\(line.map { "\($0)行目 · " } ?? "")\(issue.surface)").bold()
+                        Text(issue.reason).textSelection(.enabled)
+                    }.padding(.vertical, 4)
+                }
+                HStack { Spacer(); Button("閉じる") { showingPronunciationIssues = false }.keyboardShortcut(.cancelAction) }
+            }.padding(24).frame(width: 620, height: 450)
+        }
+        .onChange(of: song.id) { _, _ in stopPronunciation(); pronunciationStatus = nil; pronunciationIssues = [] }
         .onChange(of: modelSettings.preferences) { _, _ in stopPronunciation() }
         .onReceive(NotificationCenter.default.publisher(for: .NSUndoManagerWillUndoChange)) { notification in
             if let manager = notification.object as? UndoManager, manager === undoManager { stopPronunciation() }
@@ -525,6 +544,7 @@ struct WorkspaceView: View {
 
     private func completeAnnotations(_ phraseIDs: [UUID], pronunciation: Bool = true, meanings: Bool = true) {
         stopPronunciation()
+        pronunciationIssues = []
         let ids = Set(phraseIDs)
         mutate("辞書で補完") {
             if pronunciation { EnglishPronunciation.apply(to: &$0, phraseIDs: ids) }
@@ -577,10 +597,11 @@ struct WorkspaceView: View {
                 try Task.checkCancellation()
                 if missingSounds {
                     do {
-                        try await PronunciationCompletion().run(phraseIDs: phraseIDs, clients: clients, current: { file.song }, apply: { result, snapshot, id in
+                        let issues = try await PronunciationCompletion().run(phraseIDs: phraseIDs, clients: clients, current: { file.song }, apply: { result, snapshot, id in
                             guard pronunciationRun == run else { return }
                             mutate("発音の候補を補完") { PronunciationCompletion.merge(result, from: snapshot, phraseID: id, into: &$0) }
                         }, progress: progress)
+                        if pronunciationRun == run { pronunciationIssues = issues }
                     } catch is CancellationError { throw CancellationError() }
                     catch { failures.append(error.localizedDescription) }
                 }

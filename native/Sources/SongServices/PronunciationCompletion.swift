@@ -50,14 +50,15 @@ public struct PronunciationCompletion: Sendable {
 
     /// Apply validated results incrementally, falling back to another configured model when
     /// a backend cannot provide a valid pronunciation. Never send to an unconfigured API.
+    @discardableResult
     @MainActor
     public func run(phraseIDs: [UUID], clients: [ModelClient]? = nil, current: () -> SongDocument,
                     apply: (SongDocument, SongDocument, UUID) -> Void,
-                    progress: (String) -> Void) async throws {
+                    progress: (String) -> Void) async throws -> [PronunciationIssue] {
         try Task.checkCancellation()
         let documentID = current().id
         let work = phraseIDs.filter { !Self.missingWords(in: current(), phraseIDs: [$0]).isEmpty }
-        guard !work.isEmpty else { return }
+        guard !work.isEmpty else { return [] }
         let available: [ModelClient]
         if let clients { available = clients }
         else {
@@ -68,6 +69,7 @@ public struct PronunciationCompletion: Sendable {
         guard !available.isEmpty else {
             throw ProviderError.unavailable("利用できるAIがありません。辞書の発音は適用済みです。「AI接続」で確認できます。")
         }
+        var issues: [UUID: PronunciationIssue] = [:]
         var lastFailure: Error?
         var appliedAny = false
         var unavailable = Set<Int>()
@@ -82,33 +84,28 @@ public struct PronunciationCompletion: Sendable {
                 progress("発音を補完中 \(index + 1) / \(work.count)行（\(client.label)）")
                 let provider = OllamaPronunciationProvider(client: client)
                 do {
-                    let result = try await provider.annotate(phrase: phrase, in: snapshot, wordIDs: Set(pending.map(\.id)))
+                    let result = try await provider.annotateWithReport(phrase: phrase, in: snapshot, wordIDs: Set(pending.map(\.id)))
                     try Task.checkCancellation()
-                    apply(result, snapshot, id); appliedAny = true
+                    apply(result.document, snapshot, id); appliedAny = true
+                    for issue in result.issues { issues[issue.wordID] = issue }
                 } catch is CancellationError { throw CancellationError() }
                 catch {
                     lastFailure = error
-                    // Isolate malformed word results; connection/model availability failures
-                    // move straight to the next backend.
-                    guard error is DecodingError || (error as? ProviderError).map({
+                    let malformed = error is DecodingError || (error as? ProviderError).map({
                         if case .malformedResponse = $0 { return true }; return false
-                    }) == true else { unavailable.insert(clientIndex); continue }
+                    }) == true
+                    // No per-word request storm: retain this line and proceed to another model
+                    // or the next line. Connection failures are not retried for every phrase.
+                    if !malformed { unavailable.insert(clientIndex) }
                     for word in pending {
-                        try Task.checkCancellation()
-                        let latest = current()
-                        guard latest.id == documentID else { throw CancellationError() }
-                        guard let line = latest.phrase(id), latest.word(word.id) == snapshot.word(word.id),
-                              latest.syllables(in: word) == snapshot.syllables(in: word) else { continue }
-                        do {
-                            let result = try await provider.annotate(phrase: line, in: latest, wordIDs: [word.id])
-                            try Task.checkCancellation()
-                            apply(result, latest, id); appliedAny = true
-                        } catch is CancellationError { throw CancellationError() }
-                        catch { lastFailure = error }
+                        issues[word.id] = .init(wordID: word.id, phraseID: id, surface: word.surface,
+                            reason: malformed ? "AIの回答を読み取れませんでした。" : "AIへ接続・生成できませんでした。")
                     }
                 }
             }
         }
-        if !appliedAny, let lastFailure { throw lastFailure }
+        if !appliedAny, !unavailable.isEmpty, unavailable.count == available.count, let lastFailure { throw lastFailure }
+        let remaining = Self.missingWords(in: current(), phraseIDs: Set(phraseIDs))
+        return remaining.compactMap { issues[$0.id] }
     }
 }

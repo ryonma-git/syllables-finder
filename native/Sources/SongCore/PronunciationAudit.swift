@@ -45,6 +45,12 @@ public enum PronunciationAudit {
                 var issues: [String] = []
                 let missing = units.isEmpty || (ipa + kana).contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 if missing { issues.append("IPAまたはカタカナが未設定です。") }
+                if english {
+                    let counts = EnglishPronunciation.dictionarySyllableCounts(for: word.surface)
+                    if !counts.isEmpty, !counts.contains(units.count) {
+                        issues.append("現在の区切りは\(units.count)個、辞書の音節数は\(counts.sorted().map(String.init).joined(separator: " / "))個です。歌唱上の区切りか確認してください。")
+                    }
+                }
                 let whole = ipaKey(ipa.joined(), style: style)
                 if english, !ipa.isEmpty, !ipa.contains(where: { $0.isEmpty }), !dictionary.isEmpty,
                    !dictionary.contains(where: { ipaKey($0, style: style) == whole }) {
