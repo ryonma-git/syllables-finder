@@ -1,7 +1,7 @@
 import Foundation
 
 public struct SongDocument: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
     public var schemaVersion = currentSchemaVersion
     public var id = UUID()
     public var revision: UInt64 = 0
@@ -75,7 +75,7 @@ public struct SongDocument: Codable, Equatable, Sendable {
         try decodeReportingMigration(data).document
     }
 
-    /// Decodes the current schema, or migrates a version 1 document in memory. The caller keeps
+    /// Decodes the current schema, or migrates an older document in memory. The caller keeps
     /// the original bytes when `migratedFrom` is set, so saving never loses the old file.
     public static func decodeReportingMigration(_ data: Data) throws -> (document: SongDocument, migratedFrom: Int?) {
         guard data.count <= 20_000_000 else { throw SongError.invalid("文書が大きすぎます（上限20MB）。") }
@@ -92,6 +92,11 @@ public struct SongDocument: Codable, Equatable, Sendable {
             document.migrateFromVersion1()
             try document.validate()
             return (document, 1)
+        case 2:
+            var document = try decoder.decode(Self.self, from: data)
+            document.schemaVersion = Self.currentSchemaVersion
+            try document.validate()
+            return (document, 2)
         default:
             throw SongError.unsupportedVersion(header.schemaVersion)
         }
@@ -143,6 +148,7 @@ public struct SongDocument: Codable, Equatable, Sendable {
         }
         func unique<T: Hashable>(_ values: [T]) -> Bool { Set(values).count == values.count }
         try require(schemaVersion == Self.currentSchemaVersion, "対応しない文書形式です。")
+        try music.swing?.validate()
         let allIDs = [id] + sections.map(\.id) + phrases.map(\.id) + words.map(\.id)
             + syllables.map(\.id) + moras.map(\.id) + phonemes.map(\.id)
             + music.events.map(\.id) + music.measures.map(\.id) + music.spans.map(\.id) + alignments.map(\.id)

@@ -90,8 +90,7 @@ final class GuideTonePlayer {
             guard frames.isFinite, frames > 0, frames < Double(Int.max) else {
                 throw SongError.invalid("再生範囲の長さが正しくありません。")
             }
-            let rangeStartSeconds = plan.tempo.seconds(at: range.start.doubleValue)
-            let offset = min(plan.duration, max(0, plan.tempo.seconds(at: fromBeat) - rangeStartSeconds))
+            let offset = plan.elapsed(atWrittenBeat: fromBeat)
             let firstFrame = min(Int(frames) - 1, Int(floor(offset * GuidePCMRenderer.sampleRate)))
             if !engine.isRunning { try engine.start() }
             self.plan = plan; self.loop = loop

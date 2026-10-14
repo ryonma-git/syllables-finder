@@ -9,6 +9,7 @@ public enum SampleMIDI {
             throw SongError.invalid("サンプルMIDIは単一テンポの曲だけを書き出せます。")
         }
         let ticksPerBeat = 480
+        let swing = SwingTiming(song.music.swing)
         struct Message {
             let tick: Int
             let priority: Int
@@ -27,14 +28,14 @@ public enum SampleMIDI {
             guard meter.numerator <= 255, meter.denominator.nonzeroBitCount == 1 else {
                 throw SongError.invalid("MIDIで表せない拍子です。")
             }
-            let tick = Int((meter.onset.doubleValue * Double(ticksPerBeat)).rounded())
+            let tick = Int((swing.performedBeat(meter.onset.doubleValue) * Double(ticksPerBeat)).rounded())
             messages.append(.init(tick: tick, priority: 0, bytes: [0xFF, 0x58, 0x04,
                 UInt8(meter.numerator), UInt8(meter.denominator.trailingZeroBitCount), 24, 8]))
         }
         for event in song.music.events {
             guard let note = event.note else { continue }
-            let start = Int((event.onset.doubleValue * Double(ticksPerBeat)).rounded())
-            let end = Int(((event.onset.doubleValue + event.duration.doubleValue) * Double(ticksPerBeat)).rounded())
+            let start = Int((swing.performedBeat(event.onset.doubleValue) * Double(ticksPerBeat)).rounded())
+            let end = Int((swing.performedBeat(try event.range.end.doubleValue) * Double(ticksPerBeat)).rounded())
             guard start >= 0, end > start, end <= 100_000_000 else {
                 throw SongError.invalid("サンプルMIDIの時間範囲が大きすぎます。")
             }

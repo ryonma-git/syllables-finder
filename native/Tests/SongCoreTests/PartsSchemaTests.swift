@@ -19,7 +19,7 @@ struct PartsSchemaTests {
     @Test func samplesHaveOneMelodyPartThatOwnsEveryEvent() throws {
         for entry in SampleCatalog.entries {
             let song = entry.make()
-            #expect(song.schemaVersion == 2)
+            #expect(song.schemaVersion == SongDocument.currentSchemaVersion)
             #expect(song.music.parts.count == 1)
             #expect(song.music.events.allSatisfy { $0.partID == song.music.parts[0].id })
             #expect(try SongDocument.decode(song.encoded()) == song)
@@ -31,7 +31,7 @@ struct PartsSchemaTests {
         let data = try versionOneJSON(original)
         let (migrated, from) = try SongDocument.decodeReportingMigration(data)
         #expect(from == 1)
-        #expect(migrated.schemaVersion == 2)
+        #expect(migrated.schemaVersion == SongDocument.currentSchemaVersion)
         #expect(migrated.music.parts.map(\.name) == ["旋律"])
         #expect(migrated.music.parts[0].clef == .treble)
         #expect(migrated.music.events.allSatisfy { $0.partID == migrated.music.parts[0].id })
@@ -79,6 +79,6 @@ struct PartsSchemaTests {
     }
 
     @Test func futureVersionsAreStillRejected() {
-        #expect(throws: SongError.unsupportedVersion(3)) { try SongDocument.decode(Data("{\"schemaVersion\":3}".utf8)) }
+        #expect(throws: SongError.unsupportedVersion(4)) { try SongDocument.decode(Data("{\"schemaVersion\":4}".utf8)) }
     }
 }

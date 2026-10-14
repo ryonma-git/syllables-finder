@@ -136,6 +136,7 @@ public struct MIDIFileImport: Sendable {
         let chosen = candidates.filter { candidateIDs.contains($0.id) }
         guard !chosen.isEmpty else { throw SongError.invalid("読み込む声部を選んでください。") }
         if replace {
+            song.music.swing = nil
             for event in song.music.events { song.removeNote(id: event.id) }
             song.music.parts = []
             song.music.measures = []
