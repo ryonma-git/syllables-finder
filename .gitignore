@@ -31,3 +31,8 @@ build/
 dist/
 DerivedData/
 node_modules/
+
+# Native app build products and user song documents
+.build/
+.swiftpm/
+*.songproj/

@@ -7,6 +7,7 @@
 | 今後のMBP / Ishibashi作業場所 | `/Users/ryon/Projects-Ishibashi/syllables-finder` |
 | Inagawaの正本 | `/Users/ryon/Git/remotes/syllables-finder.git` |
 | Inagawaの作業場所 | `/Users/ryon/Projects-Inagawa/syllables-finder` |
+| 公開GitHubミラー | `https://github.com/ryonma-git/syllables-finder` |
 | 移行前の保管用 | Ishibashi `/Users/ryon/Projects/syllables-finder` |
 
 今後Codexで改修する際は、上記の新しい作業場所をプロジェクトフォルダとして選びます。既に開いているタスクの作業場所が自動で切り替わることは前提にしません。アプリは新しいフォルダ内の `起動.command` をダブルクリックします。元のランチャーを開いた場合は、引き続き移行前のアプリが動きます。
@@ -16,6 +17,8 @@
 作業開始時にInagawaとの差分を確認し、安全に取り込める更新を取得します。各Macのファイルを編集し、テストしてcommitします。そのcommitをcanonicalへpushして、他のMacが続きを取得できる状態にします。ファイル保存だけ・commitだけではInagawaに反映されません。
 
 基本branchはmainです。同時に複数のMacでmainを進めて分岐した場合は、force pushせず履歴を比較します。コード変更をCodexに依頼した際の開始・終了手順は `AGENTS.md` に記載しています。通信できないときも手元で編集・commitでき、未push分は手元に保持します。
+
+2026-09-27からGitHubを公開ミラーに追加しました。`origin`は従来のcanonical、Inagawaの`github` remoteがGitHubを指します。Inagawaの作業コピーで検証・commitし、まずcanonicalへ通常push、同じcommitをGitHubへ通常pushします。作業branchを共有しただけの場合は、`main`に採用されたとは報告しません。
 
 ## 専用実行環境
 
@@ -31,7 +34,7 @@ PythonとTkは各Macの既存環境を使用し、`.venv`は各作業コピー�
 
 Python 3.14 / Tk 9環境での検証を基準にしています。OSのPython入替、HomebrewやTkの新規インストール、管理者権限を伴う変更はこの手順に含みません。
 
-既存の `起動.command` は未変更で、`.venv`がない場合には従来どおり初回セットアップを行います。再現性を優先する場合は先に上記の固定版環境を用意してください。
+`起動.command` は、`.venv`がない場合に従来どおり初回セットアップを行います。2026-09-25にPDF出力を追加したため、既存の`.venv`にreportlabが無い場合は起動時に追加で入れます（通信が必要）。再現性を優先する場合は先に上記の固定版環境を用意してください。
 
 ## 検証とデータ
 
@@ -40,7 +43,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python test_vowel_marker.py
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-既存の母音判定12例に加え、Word出力の色・フォント・改行・日本語保持、GUIのプレビュー・曲選択・入力エラー・Word生成の回帰テストを実行します。テストは合成テキストと一時フォルダを使い、ユーザーの教材を読み込みません。自動GUIテストは実際のTk widgetsとcallbacksを使いますが、保存ダイアログと通知は置き換えるため、実画面の操作確認とは分けて記録します。
+既存の母音判定12例に加え、Word出力の色・フォント・改行・日本語保持・デザイン（A4、見出し帯、ページ番号、連ごとの縦線）、PDF出力（ページ割り・折り返し・フォント代用）、GUIのプレビュー・曲選択・入力エラー・Word/PDF生成の回帰テストを実行します。テストは合成テキストと一時フォルダを使い、ユーザーの教材を読み込みません。自動GUIテストは実際のTk widgetsとcallbacksを使いますが、保存ダイアログと通知は置き換えるため、実画面の操作確認とは分けて記録します。
 
 生成docx・入力テキスト・`.ui_state.json`・個人情報・秘密情報は各Macに残すGit外データです。個人情報や授業データを正本へ送らないでください。内蔵8曲・例外辞書110語・アプリ本体は移行前の内容を保持しています。
 

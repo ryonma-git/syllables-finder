@@ -9,7 +9,8 @@
 - canonical: Inagawa `/Users/ryon/Git/remotes/syllables-finder.git`
 - 基準branch: `main`。作業branchを使った場合は、共有済みとmainへ採用済みを区別する。
 - 元の `/Users/ryon/Projects/syllables-finder` は移行前の保管用。編集、削除、移動、改名、Git初期化をしない。
-- originはcanonicalを指す。Ishibashiでは `inagawa:Git/remotes/syllables-finder.git`、Inagawaでは上記のローカル絶対パス。GitHubへ送らない。
+- originはcanonicalを指す。Ishibashiでは `inagawa:Git/remotes/syllables-finder.git`、Inagawaでは上記のローカル絶対パス。
+- GitHub公開リポジトリ `https://github.com/ryonma-git/syllables-finder` はInagawaからの公開ミラー。Inagawaの `github` remoteを使い、canonicalへ通常push後に同じcommitをpushする。IshibashiからGitHubへ直接pushしない。
 
 ## 作業の開始
 
@@ -20,7 +21,7 @@
 
 ## 作業の終了
 
-コード変更を依頼された作業では、ユーザーがcommit/pushを控えるよう指定していない限り、適切な検証、変更内容のレビュー、明示したファイルだけのcommit、canonicalへの通常pushまでを一連のSSOT作業として扱う。読み取り・説明だけの依頼ではcommitしない。
+コード変更を依頼された作業では、ユーザーがcommit/pushを控えるよう指定していない限り、適切な検証、変更内容のレビュー、明示したファイルだけのcommit、canonicalとGitHubへの通常pushまでを一連のSSOT作業として扱う。読み取り・説明だけの依頼ではcommitしない。
 
 push前に変更対象と履歴を確認し、生成文書・入力テキスト・個人情報・秘密情報・巨大データを含めない。自分の変更以外をまとめてcommitしない。push失敗時はforceで通さず、ローカルcommitを保持して原因を報告する。push先とcommit IDを最終報告に残す。
 
