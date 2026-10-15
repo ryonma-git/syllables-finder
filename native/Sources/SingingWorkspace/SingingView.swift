@@ -8,6 +8,7 @@ struct SingingView: View {
     @ObservedObject var session: WorkspaceSession
     let applyRange: (BeatRange) -> Void
     let seek: (Double) -> Void
+    var setSwingEnabled: (Bool) -> Void = { _ in }
     @State private var followedRow: Int?
     @State private var staffScale = Self.overviewScale
 
@@ -203,6 +204,16 @@ struct SingingView: View {
                 }
                 Spacer(minLength: 0)
                 Text("読みは原音の近似です").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 10) {
+                Toggle("スウィング", isOn: Binding(get: { song.music.swing?.enabled ?? false }, set: { setSwingEnabled($0) }))
+                    .toggleStyle(.checkbox).disabled(song.music.swing == nil)
+                Button("スウィング設定…") { session.showingSwing = true }
+                Text(song.music.swing?.label ?? "単位・比率・適用範囲を設定できます")
+                    .font(.caption).foregroundStyle(.secondary)
+                if song.music.swing != nil {
+                    Text("楽譜は通常音価で表示").font(.caption).foregroundStyle(.secondary)
+                }
             }
         }.padding(.horizontal, 20).padding(.vertical, 9)
     }

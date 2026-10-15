@@ -129,15 +129,19 @@ public struct PlaybackPlan: Sendable {
     public let notes: [PlannedNote]
     public let duration: Double
     public let diagnostics: [String]
+    public let swing: SwingTiming
 
     public init(song: SongDocument, range: BeatRange, practiceBPM: Double) throws {
         try range.validate()
         guard let originalBPM = song.music.tempos.first?.bpm, practiceBPM.isFinite, practiceBPM > 0 else {
             throw SongError.invalid("練習テンポを設定できません。")
         }
-        let tempo = try TempoMap(tempos: song.music.tempos, multiplier: practiceBPM / originalBPM)
-        let rangeStartSeconds = tempo.seconds(at: range.start.doubleValue)
-        let total = tempo.seconds(at: range.end.doubleValue) - rangeStartSeconds
+        try song.music.swing?.validate()
+        let swing = SwingTiming(song.music.swing)
+        let performedTempos = try song.music.tempos.map { try Tempo(onset: swing.performedBeat($0.onset), bpm: $0.bpm) }
+        let tempo = try TempoMap(tempos: performedTempos, multiplier: practiceBPM / originalBPM)
+        let rangeStartSeconds = tempo.seconds(at: swing.performedBeat(range.start.doubleValue))
+        let total = tempo.seconds(at: swing.performedBeat(range.end.doubleValue)) - rangeStartSeconds
         guard total.isFinite, total > 0 else { throw SongError.invalid("再生範囲の長さが正しくありません。") }
 
         var grouped: [MusicalEvent] = []
@@ -164,14 +168,21 @@ public struct PlaybackPlan: Sendable {
         self.notes = grouped.compactMap { event in
             guard let note = event.note, let end = try? event.range.end,
                   event.onset < range.end, range.start < end else { return nil }
-            let startSeconds = max(0, tempo.seconds(at: event.onset.doubleValue) - rangeStartSeconds)
-            let endSeconds = min(total, tempo.seconds(at: end.doubleValue) - rangeStartSeconds)
+            let startSeconds = max(0, tempo.seconds(at: swing.performedBeat(event.onset.doubleValue)) - rangeStartSeconds)
+            let endSeconds = min(total, tempo.seconds(at: swing.performedBeat(end.doubleValue)) - rangeStartSeconds)
             return PlannedNote(pitch: note.pitch, velocity: note.velocity, start: startSeconds, end: endSeconds)
         }
         self.range = range; self.tempo = tempo; self.duration = total; self.diagnostics = diagnostics
+        self.swing = swing
+    }
+
+    public func elapsed(atWrittenBeat beat: Double) -> Double {
+        min(duration, max(0, tempo.seconds(at: swing.performedBeat(beat))
+                          - tempo.seconds(at: swing.performedBeat(range.start.doubleValue))))
     }
 
     public func beat(at elapsed: Double) -> Double {
-        tempo.beat(at: tempo.seconds(at: range.start.doubleValue) + min(max(elapsed, 0), duration))
+        swing.writtenBeat(tempo.beat(at: tempo.seconds(at: swing.performedBeat(range.start.doubleValue))
+                                    + min(max(elapsed, 0), duration)))
     }
 }

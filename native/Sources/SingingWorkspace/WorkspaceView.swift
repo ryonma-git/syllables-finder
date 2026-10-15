@@ -25,6 +25,7 @@ final class WorkspaceSession: ObservableObject {
     @Published var stepCursor: Beat?
     @Published var showingParts = false
     @Published var showingAlignment = false
+    @Published var showingSwing = false
     @Published var showInspector = false
     @Published var showNotes = false
     @Published var guideState = GuideState.stopped
@@ -129,7 +130,10 @@ struct WorkspaceView: View {
                             } else {
                                 phraseHeader(phrase)
                                 SingingView(song: song, phrase: phrase, session: session,
-                                            applyRange: applyPracticeRange, seek: seek)
+                                            applyRange: applyPracticeRange, seek: seek,
+                                            setSwingEnabled: { enabled in
+                                                mutate("スウィングを切り替える") { $0.music.swing?.enabled = enabled }
+                                            })
                             }
                             Spacer(minLength: 0)
                         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -226,8 +230,11 @@ struct WorkspaceView: View {
             if let id = session.eventID, song.event(id) == nil { session.eventID = nil }
             if let id = session.wordID, song.word(id) == nil { session.wordID = nil }
         }
-        .onChange(of: song.music) { _, _ in
-            if session.guideState != .stopped { pauseForMusicEdit() }
+        .onChange(of: song.music) { before, after in
+            var withNewSwing = before
+            withNewSwing.swing = after.swing
+            if withNewSwing == after { tempoChanged() }
+            else if session.guideState != .stopped { pauseForMusicEdit() }
         }
         .task(id: session.guideState) {
             guard session.guideState == .playing else { return }
@@ -284,6 +291,24 @@ struct WorkspaceView: View {
         .sheet(isPresented: $addingLyrics) { lyricsSheet }
         .sheet(isPresented: $showingSamples) { samplePicker }
         .sheet(isPresented: $session.showingParts) { PartsSheet(song: song, session: session, mutate: mutate) }
+        .sheet(isPresented: $session.showingSwing) {
+            SwingSheet(song: song, selection: session.practiceCandidate ?? session.practiceRange) { next in
+                if song.music.swing == nil, var settings = next.music.swing, song.music.events != next.music.events {
+                    settings.enabled = true
+                    let timing = SwingTiming(settings)
+                    if let position = session.guide.position { session.position = position }
+                    stopPlayback()
+                    session.position = timing.writtenBeat(session.position)
+                    func converted(_ range: BeatRange?) -> BeatRange? {
+                        range.flatMap { try? .init(start: timing.writtenBeat($0.start), end: timing.writtenBeat($0.end)) }
+                    }
+                    session.practiceRange = converted(session.practiceRange)
+                    session.practiceCandidate = converted(session.practiceCandidate)
+                    session.stepCursor = session.stepCursor.flatMap { try? timing.writtenBeat($0) }
+                }
+                session.replace(next, in: $file, undo: undoManager, name: "スウィング設定を変更")
+            }
+        }
         .sheet(item: $pendingMIDI) { pending in
             MIDIImportSheet(song: song, pending: pending) { ids, replace, grid in
                 stopPlayback()

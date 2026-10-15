@@ -33,6 +33,31 @@ NoteData: MIDI pitch/velocity/channel/track、任意の notation(spelling/voice/
 Note の拍位置は onset − measure.start の派生値。矛盾する beat を二重保存しない。
 MusicSpan は音楽のみの Section/Phrase。言語 Phrase と同じオブジェクトにしない。
 
+## スウィング（schemaVersion 3）
+
+`Music.swing` は任意の演奏設定。音符・休符・歌詞の対応範囲は記譜上の拍で保存し、
+`PlaybackPlan` が演奏時刻へ変換する。オン／オフ・比率変更では音符自体を書き換えない。
+これは [Logic Proの非破壊クオンタイズ](https://support.apple.com/en-bw/guide/logicpro/lgcp47452db8/mac)と
+[Ableton LiveのGroove](https://www.ableton.com/en/live-manual/12/using-grooves/)を参考にした方式。
+
+- `enabled`: オフ時はストレート。設定内容は保持する。
+- `subdivision`: `eighth` または `sixteenth`。後者は8分位置を固定し、16分の組だけを跳ねさせる。
+- `longFraction`: 組の前半が占める割合を有理数で保持。1/2は均等、2/3は長短2:1。UI範囲は50〜75%。
+- `ranges`: 空なら曲全体。複数範囲の場合はその範囲だけ適用し、間はストレート。
+  重複・逆順を禁止し、境界は組の境界（8分は1拍、16分は0.5拍）に揃える。
+
+開始と終了の両端を連続的に変換し、タイ・休符・レガートを保持する。暗黙のクオンタイズはしない。
+ガイド音、途中からの再生、選択範囲・ループ、練習テンポ、画面の再生位置は同じ変換と逆変換を使う。
+五線とピアノロールは記譜上の位置を表示する。スウィング由来の略譜は通常の音価にできるが、
+別の本来の三連符などまで通常音価へ丸めない。
+
+既存の演奏済みMIDIなどは利用者が単位・比率・範囲を選び、`SwingConversion` で明示的に逆変換する。
+音符ID・音高・手修正は保持し、相対音節範囲、直接時刻の対応、フレーズ、テンポ等も同時に変換する。
+変換済み文書への二重変換は禁止。設定変更と変換はUndo対象。
+旧v1/v2文書は再生タイミングを変えず移行し、元のJSONをpackageの`preserved/`へ保存する。
+v3は旧アプリによる設定の消失を避けるため、旧版では開けない。
+MIDIを全置換するときは元の曲のスウィング設定を解除する。
+
 ## 声部（schemaVersion 2、[LYRICS_MELODY_DESIGN.md](LYRICS_MELODY_DESIGN.md) §4）
 
 Music.parts: Part(id, name, abbreviation, clef[treble/treble8vb/bass], phraseIDs?)。

@@ -124,9 +124,10 @@ public struct Music: Codable, Equatable, Sendable {
     public var meters: [Meter] = [.init()]
     public var spans: [MusicSpan] = []
     public var parts: [Part] = []
+    public var swing: SwingSettings?
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case measures, events, tempos, meters, spans, parts }
+    private enum CodingKeys: String, CodingKey { case measures, events, tempos, meters, spans, parts, swing }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         measures = try c.decode([Measure].self, forKey: .measures)
@@ -136,6 +137,7 @@ public struct Music: Codable, Equatable, Sendable {
         spans = try c.decode([MusicSpan].self, forKey: .spans)
         // Absent in schemaVersion 1; the document migration creates them.
         parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
+        swing = try c.decodeIfPresent(SwingSettings.self, forKey: .swing)
     }
 
     public func part(_ id: UUID?) -> Part? { parts.first { $0.id == id } }
