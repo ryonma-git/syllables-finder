@@ -127,19 +127,20 @@ private final class PDFPainter {
         let after = order.afterTranslation
         func blockHeight(_ elements: [ReadingElement]) -> CGFloat {
             guard !elements.isEmpty else { return 0 }
-            if rows.isEmpty {
-                return elements.contains(.original) ?
-                    textHeight(phrase.original, width: contentWidth - 30,
-                               font: .systemFont(ofSize: fontSize(13), weight: .semibold)) : 0
-            }
             return rows.reduce(0) { $0 + $1.height(for: elements) + rowGap }
         }
+        let originalFont = NSFont.systemFont(ofSize: fontSize(11), weight: .medium)
+        let originalHeight = phrase.original.isEmpty ? 0 :
+            textHeight(phrase.original, width: contentWidth - 30, font: originalFont) + 4
         let translationHeight = phrase.translation.isEmpty ? 0 :
             textHeight(phrase.translation, width: contentWidth - 30, font: .systemFont(ofSize: fontSize(10))) + 3
-        let wholeHeight = blockHeight(before) + blockHeight(after) + CGFloat(translationHeight)
-            + phraseGap + (phrase.section == section ? 0 : 14)
+        let sectionHeight: CGFloat = phrase.section == section ? 0 : 14
+        let wholeHeight = originalHeight + blockHeight(before) + blockHeight(after)
+            + CGFloat(translationHeight) + phraseGap + sectionHeight
         if wholeHeight < footerTop - 100 && y + wholeHeight > footerTop - 10 { endPage(); startPage() }
-        ensure(min(wholeHeight, (rows.first?.height(for: before) ?? blockHeight(before)) + 8))
+        let firstBlockHeight = before.isEmpty ? CGFloat(translationHeight)
+            : (rows.first?.height(for: before) ?? 0)
+        ensure(min(wholeHeight, sectionHeight + originalHeight + firstBlockHeight + 8))
         if section != phrase.section {
             section = phrase.section
             drawText(section, x: margin, y: y, width: contentWidth,
@@ -148,6 +149,11 @@ private final class PDFPainter {
         }
         drawText(String(format: "%02d", index + 1), x: margin, y: y + 1, width: 28,
                  font: .monospacedDigitSystemFont(ofSize: fontSize(10), weight: .semibold), color: accent)
+        if !phrase.original.isEmpty {
+            drawText(phrase.original, x: margin + 30, y: y, width: contentWidth - 30,
+                     font: originalFont, color: dark)
+            y += originalHeight
+        }
         drawBlock(phrase, index: index, rows: rows, elements: before)
         if !phrase.translation.isEmpty {
             ensure(CGFloat(translationHeight) + 3)
@@ -162,13 +168,6 @@ private final class PDFPainter {
     private func drawBlock(_ phrase: PrintPhrase, index: Int, rows: [WordRow],
                            elements: [ReadingElement]) {
         guard !elements.isEmpty else { return }
-        if rows.isEmpty {
-            if elements.contains(.original) {
-                y += drawText(phrase.original, x: margin + 30, y: y, width: contentWidth - 30,
-                              font: .systemFont(ofSize: fontSize(13), weight: .semibold), color: dark)
-            }
-            return
-        }
         for row in rows {
             if ensure(row.height(for: elements) + rowGap) {
                 drawText("\(phrase.section)  /  \(String(format: "%02d", index + 1))（続き）",

@@ -6,6 +6,49 @@ import Testing
 
 @MainActor
 struct PrintTests {
+    @Test func continuousOriginalPrecedesAnnotationsInEveryOrder() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Bonjour, amie !", language: "fr", syllabify: true)
+        try song.setSyllables(wordID: song.words[0].id, texts: ["Bon", "jour"])
+        song.phrases[0].translation.edit("こんにちは、友だち！")
+        let splitOrder = try #require(ReadingOrder([.reading, .translation, .original, .meaning, .ipa]))
+        for order in [ReadingOrder.baseline, .previous, splitOrder] {
+            let sheet = PrintSheet(song: song, order: order)
+            let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
+            let page = try #require(pdf.page(at: 0))
+            let originals = pdf.findString("Bonjour, amie !", withOptions: [])
+            #expect(originals.count == 1)
+            let original = try #require(originals.first).bounds(for: page)
+            let segmented = try #require(pdf.findString("Bon·jour,", withOptions: []).first).bounds(for: page)
+            #expect(original.minY > segmented.maxY)
+            #expect(pdf.string?.contains("こんにちは、友だち！") == true)
+
+            let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".docx")
+            defer { try? FileManager.default.removeItem(at: path) }
+            try WordSheet.render(sheet).write(to: path)
+            let process = Process()
+            let output = Pipe()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            process.arguments = ["-p", path.path, "word/document.xml"]
+            process.standardOutput = output
+            try process.run()
+            let xml = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+            let originalPosition = try #require(xml.range(of: "Bonjour, amie !"))
+            let annotationPosition = try #require(xml.range(of: "<w:tbl>"))
+            #expect(originalPosition.lowerBound < annotationPosition.lowerBound)
+        }
+    }
+
+    @Test func originalWithoutWordAnnotationsIsPrintedOnce() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "原文だけの行。", language: "ja", syllabify: false)
+        song.phrases[0].wordIDs = []
+        let pdf = try #require(PDFDocument(data: PDFSheet.render(PrintSheet(song: song))))
+        #expect(pdf.findString("原文だけの行。", withOptions: []).count == 1)
+    }
+
     @Test func wholeWordFallbackAppearsWithWarningInPDFAndWord() throws {
         var song = SongDocument()
         song.appendPhrase(text: "expression", language: "en", syllabify: true)

@@ -45,6 +45,7 @@ public enum WordSheet {
                 body += paragraph(phrase.section, style: "Section")
                 lastSection = phrase.section
             }
+            if !phrase.original.isEmpty { body += paragraph(phrase.original, style: "Phrase") }
             body += wordBlock(phrase, elements: sheet.order.beforeTranslation, appearance: sheet.appearance)
             if !phrase.translation.isEmpty {
                 body += paragraph("文の意味　" + phrase.translation, style: "Translation",
@@ -64,9 +65,6 @@ public enum WordSheet {
                                   appearance: PrintAppearance) -> String {
         guard !elements.isEmpty else { return "" }
         var result = ""
-        if elements.first == .original || (phrase.words.isEmpty && elements.contains(.original)) {
-            result += paragraph(phrase.original, style: "Phrase")
-        }
         for (index, row) in flowRows(phrase.words).enumerated() {
             if index > 0 {
                 result += paragraph("続き｜" + phrase.original, style: "Continuation", keepNext: true)
