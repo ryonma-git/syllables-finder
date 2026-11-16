@@ -19,6 +19,26 @@
 3. ローカルの未保存作業や分岐があれば、勝手にstash、reset、rebase、上書きしない。状態を報告して保全する。
 4. オフラインなら手元の履歴で進められるが、取得できた最新版の時点と未push状態を明記する。
 
+## 新しいセッションでアプリを開く前に（必須）
+
+2026-11-16のユーザー指示: 古いコミットのアプリを誤って開かないこと。このディレクトリで始める新しいセッションでも、毎回最新版を確認してから起動する。過去の会話にあるcommit IDや既存のビルド成果物を、そのまま最新版として扱わない。
+
+1. 上記の開始手順に加え、Inagawaでは `git fetch origin` と `git fetch github` を行い、`HEAD`・`origin/main`・`github/main` と各作業branchの差分を確認する。Ishibashiのcheckout・未commit変更・作業worktreeもSSHで確認する。接続できない対象があれば、その対象の最新版は未確認と明記する。
+2. 通常利用の基準は共有済みの `main`。最新の作業branchがmainに未採用なら、その違いを報告し、勝手に統合しない。cleanな作業ツリーでのみ `git switch main`、必要なら `git merge --ff-only origin/main` を行う。分岐・未commit変更・remote間の不一致を隠して古い版を開かない。
+3. アプリ起動前に `native/scripts/build-app.sh` を実行し、そのcheckoutから再ビルドする。アプリ表示の `0.1.0`、フォルダの更新日時、既に起動中であることだけでは版を判定しない。
+4. 起動先は作業場所を明示した `native/build/Singing Workspace.app`。Inagawaでは `/Users/ryon/Projects-Inagawa/syllables-finder/native/build/Singing Workspace.app`。アプリ名やbundle IDだけで選択すると別worktreeの旧版に接続し得るため、必ず絶対パスで選択する。既存プロセスはビルドし直しても更新されないので、旧プロセスの文書を保存して終了し、新しいプロセスを起動する。
+5. 起動後に実行ファイルのパスと対象文書の画面を確認し、確認したcommit IDを報告する。未保存文書はGit外へ退避保存する。強制終了や「削除して終了」で消さない。
+
+`syllables-finder-class-materials`、`syllables-finder-claude`、`.codex/worktrees/53dd/syllables-finder` は通常利用の起動先にしない。履歴調査で参照しても、明示的な依頼なしに古いアプリを再ビルド・起動しない。commit IDを名前に付けた一時的な `.app` の複製も常用しない。
+
+### songprojと教材出力
+
+- ユーザーの `.songproj` を上記で確認したアプリで開き、歌詞・読み・意味を確認してから出力する。
+- 保存済み `.songproj` のPDF・Word出力には同じcheckoutからビルドした `SongPrintTool`、またはアプリの共有メニューを使う。出力する表示順・デザイン・色をアプリ設定と合わせる。独自に別レイアウトのPDFを作成しない。
+- 各フレーズの通しの原文を、音節色付けの単語欄とは別に出力する。読みは単語単体だけでなく、行の文脈でリエゾン・連音も確認する。音源を確認していない場合は歌手の実演と一致すると断定しない。
+- `SongPrintTool` のパスは `native/scripts/swift-tool.sh build --show-bin-path` で取得する。`SongPrintTool /absolute/input.songproj /absolute/output.pdf` が既存の出力経路。HTTP APIは歌詞からのプロジェクト生成用であり、PDF出力APIと混同しない（`docs/SONG_GENERATION_API.md`）。
+- 起動・版確認の詳細は `docs/SSOT.md` を参照する。
+
 ## 作業の終了
 
 コード変更を依頼された作業では、ユーザーがcommit/pushを控えるよう指定していない限り、適切な検証、変更内容のレビュー、明示したファイルだけのcommit、canonicalとGitHubへの通常pushまでを一連のSSOT作業として扱う。読み取り・説明だけの依頼ではcommitしない。

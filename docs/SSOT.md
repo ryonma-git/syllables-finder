@@ -10,7 +10,45 @@
 | 公開GitHubミラー | `https://github.com/ryonma-git/syllables-finder` |
 | 移行前の保管用 | Ishibashi `/Users/ryon/Projects/syllables-finder` |
 
-今後Codexで改修する際は、上記の新しい作業場所をプロジェクトフォルダとして選びます。既に開いているタスクの作業場所が自動で切り替わることは前提にしません。アプリは新しいフォルダ内の `起動.command` をダブルクリックします。元のランチャーを開いた場合は、引き続き移行前のアプリが動きます。
+今後Codexで改修する際は、上記の新しい作業場所をプロジェクトフォルダとして選びます。既に開いているタスクの作業場所が自動で切り替わることは前提にしません。現在の歌唱練習アプリはSwift版の **Singing Workspace** です。最新版を確認したうえで `native/新アプリを起動.command` を使います。ルートの `起動.command` は従来のPython版専用です。
+
+## 新しいセッションでの最新版確認と起動
+
+2026-11-16に、古いworktreeのアプリを開いてしまう問題がありました。以後、`AGENTS.md` の「新しいセッションでアプリを開く前に」を毎回実行します。ユーザーが別の版を指定しない限り、通常利用は共有済みのmainを基準にします。
+
+Inagawaでは作業ツリーを確認し、canonicalとGitHubの両方をfetchします。Ishibashiのcheckoutと未commit作業も確認します。mainが一致していても、別branchの未採用作業と区別してください。確認先に到達できない場合は、その範囲を明示します。
+
+```sh
+git status --short --branch
+git fetch origin
+git fetch github
+git rev-parse HEAD origin/main github/main
+git worktree list
+ssh Ishibashi 'git -C /Users/ryon/Projects-Ishibashi/syllables-finder status --short --branch; git -C /Users/ryon/Projects-Ishibashi/syllables-finder rev-parse HEAD; git -C /Users/ryon/Projects-Ishibashi/syllables-finder worktree list'
+```
+
+他のworktreeの未commit状態も個別に確認します。cleanで安全に切り替えられる場合だけmainへ切り替え、更新はfast-forward限定です。分岐や未保存作業をstash/resetで隠して進めないでください。
+
+```sh
+git switch main
+git merge --ff-only origin/main
+native/scripts/build-app.sh
+```
+
+起動先はこのcheckoutの `native/build/Singing Workspace.app` の絶対パスです。同じ名前・bundle IDを持つアプリが複数あるため、名前だけで開かないでください。ビルド前から動いているプロセスは古いままなので、未保存文書を保存して終了し、再起動してから実行パスと文書画面を確認します。
+
+`native/新アプリを起動.command` はビルドと起動を行いますが、Gitのfetch・更新・既存プロセスの終了は行いません。先に上記の確認を済ませてください。アプリの表示バージョン `0.1.0` は複数のcommitで共通なので、版の根拠には使えません。
+
+通常利用から除外する旧worktreeは、Inagawaの `syllables-finder-class-materials`、`syllables-finder-claude`、`.codex/worktrees/53dd/syllables-finder` です。これらの生成済みアプリ3個は2026-11-16にゴミ箱へ移しました。未保存文書はInagawaの `~/Documents/SingingWorkspaceRecovery-2026-11-16` に保存しました。ソースとGit履歴は調査用に保持し、ユーザーの明示的な依頼なしに古いアプリを再生成しません。
+
+教材は `.songproj` を最新版で開き、アプリの共有メニューまたは同じ版の `SongPrintTool` で出力します。表示順・デザイン・色も合わせます。既存ビルドの使い回しや独自PDFレイアウトへの置き換えをしません。
+
+```sh
+binary_dir="$(native/scripts/swift-tool.sh build --show-bin-path)"
+"$binary_dir/SongPrintTool" /absolute/input.songproj /absolute/output.pdf
+```
+
+2026-11-16の整理時点では、アプリソースの基準は `5d76d60` で、GitHub main・canonical main・Ishibashiのcheckoutが一致していました。この値は当日の記録であり、以後は毎回fetchして確認します。
 
 ## 日々の流れ
 
