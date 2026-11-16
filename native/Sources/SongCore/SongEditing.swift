@@ -30,17 +30,37 @@ extension SongDocument {
     public mutating func align(syllableID: UUID, to eventIDs: [UUID], inPart partID: UUID? = nil) throws {
         guard syllable(syllableID) != nil else { throw SongError.invalid("音節が見つかりません。") }
         let target = LanguageTarget(.syllable, syllableID)
-        let scope = partID ?? eventIDs.first.flatMap { event($0)?.partID }
-        func inScope(_ alignment: Alignment) -> Bool {
-            guard let scope else { return true }
-            return alignment.musicTargets.contains { destination in
-                if case .event(let id, _) = destination { return event(id)?.partID == scope }
-                return false
+        let selected = eventIDs.compactMap { event($0) }
+        guard selected.count == eventIDs.count, Set(eventIDs).count == eventIDs.count else {
+            throw SongError.invalid("対応付ける音符が見つからないか、重複しています。")
+        }
+        let scope = partID ?? selected.first?.partID ?? (music.parts.count == 1 ? music.parts.first?.id : nil)
+        guard let scope, music.part(scope) != nil else { throw SongError.invalid("対応を編集する声部を選んでください。") }
+        guard selected.allSatisfy({ $0.partID == scope }) else { throw SongError.invalid("同じ声部の音符を選んでください。") }
+        func inScope(_ destination: MusicTarget) -> Bool {
+            if case .event(let id, _) = destination { return event(id)?.partID == scope }
+            return false
+        }
+        var retained: [Alignment] = []
+        for var alignment in alignments {
+            guard alignment.languageTargets.contains(target), alignment.musicTargets.contains(where: inScope) else {
+                retained.append(alignment); continue
+            }
+            let otherMusic = alignment.musicTargets.filter { !inScope($0) }
+            let otherLanguage = alignment.languageTargets.filter { $0 != target }
+            if !otherLanguage.isEmpty {
+                // Other language items still own every destination in the original many-to-many record.
+                alignment.languageTargets = otherLanguage
+                retained.append(alignment)
+            }
+            if !otherMusic.isEmpty {
+                if !otherLanguage.isEmpty { alignment.id = UUID() }
+                alignment.languageTargets = [target]
+                alignment.musicTargets = otherMusic
+                retained.append(alignment)
             }
         }
-        // Keep the other language targets of a many-to-many alignment intact.
-        for i in alignments.indices where inScope(alignments[i]) { alignments[i].languageTargets.removeAll { $0 == target } }
-        alignments.removeAll { $0.languageTargets.isEmpty }
+        alignments = retained
         if !eventIDs.isEmpty {
             alignments.append(.init(languageTargets: [target], musicTargets: eventIDs.map { .event($0) }, relation: .manual, userEdited: true))
         }
@@ -146,12 +166,14 @@ extension SongDocument {
     private mutating func removeSyllables(_ ids: [UUID]) {
         let removed = Set(ids)
         let moraIDs = Set(moras.filter { removed.contains($0.parentSyllableID) }.map(\.id))
+        let phonemeIDs = Set(phonemes.filter { removed.contains($0.parentSyllableID) }.map(\.id))
         moras.removeAll { removed.contains($0.parentSyllableID) }
         phonemes.removeAll { removed.contains($0.parentSyllableID) }
         syllables.removeAll { removed.contains($0.id) }
         for i in alignments.indices {
             alignments[i].languageTargets.removeAll { target in
                 (target.kind == .syllable && removed.contains(target.id)) || (target.kind == .mora && moraIDs.contains(target.id))
+                    || (target.kind == .phoneme && phonemeIDs.contains(target.id))
             }
         }
         alignments.removeAll { $0.languageTargets.isEmpty }
@@ -176,6 +198,33 @@ extension SongDocument {
 // MARK: Parts and step entry
 
 extension SongDocument {
+    /// Changes only the first tempo; later tempo changes remain part of the score.
+    public mutating func setInitialTempo(bpm: Double) throws {
+        guard bpm.isFinite, bpm > 0, bpm <= 1000 else { throw SongError.invalid("テンポが範囲外です。") }
+        if music.tempos.first?.onset == .zero { music.tempos[0].bpm = bpm }
+        else { music.tempos.insert(.init(bpm: bpm), at: 0) }
+    }
+
+    /// Reflows bar boundaries without moving notes or changing the later meter map.
+    public mutating func setInitialMeter(numerator: Int, denominator: Int) throws {
+        guard (1...128).contains(numerator), (1...128).contains(denominator), denominator.nonzeroBitCount == 1 else {
+            throw SongError.invalid("拍子が範囲外です。")
+        }
+        var candidate = self
+        let end = MeasureProjection.songEnd(candidate)
+        let meter = Meter(numerator: numerator, denominator: denominator)
+        if candidate.music.meters.first?.onset == .zero { candidate.music.meters[0] = meter }
+        else { candidate.music.meters.insert(meter, at: 0) }
+        candidate.music.measures = []
+        try candidate.extendMeasures(through: end)
+        for index in candidate.music.events.indices {
+            let onset = candidate.music.events[index].onset
+            candidate.music.events[index].measureID = candidate.music.measures.first { $0.range.start <= onset && onset < $0.range.end }?.id
+        }
+        try candidate.validate()
+        self = candidate
+    }
+
     @discardableResult
     public mutating func addPart(name: String, abbreviation: String = "", clef: Clef = .treble) -> UUID {
         let part = Part(name: name.isEmpty ? "声部\(music.parts.count + 1)" : name, abbreviation: abbreviation, clef: clef)
@@ -197,15 +246,25 @@ extension SongDocument {
     /// Appends measures from the meter map so that they reach `end` (numbering continues).
     public mutating func extendMeasures(through end: Beat) throws {
         var position = music.measures.map(\.range.end).max() ?? .zero
-        var number = (music.measures.compactMap { Int($0.number) }.max() ?? 0) + 1
+        guard position < end else { return }
+        var number = music.measures.compactMap { Int($0.number) }.max() ?? 0
         var guardCount = 0
-        while position < end && guardCount < 10_000 {
+        var appended: [Measure] = []
+        while position < end {
+            guard guardCount < 10_000 else { throw SongError.invalid("追加できる小節数の上限を超えました。") }
+            let increment = number.addingReportingOverflow(1)
+            guard !increment.overflow else { throw SongError.invalid("小節番号が大きすぎます。") }
+            number = increment.partialValue
             let meter = music.meters.last { $0.onset <= position } ?? .init()
+            guard (1...128).contains(meter.numerator), (1...128).contains(meter.denominator), meter.denominator.nonzeroBitCount == 1 else {
+                throw SongError.invalid("拍子が範囲外です。")
+            }
             var next = try position.adding(Beat(Int64(meter.numerator) * 4, Int64(meter.denominator)))
             if let change = music.meters.first(where: { position < $0.onset && $0.onset < next }) { next = change.onset }
-            music.measures.append(.init(number: String(number), range: .init(start: position, end: next)))
-            position = next; number += 1; guardCount += 1
+            appended.append(.init(number: String(number), range: .init(start: position, end: next)))
+            position = next; guardCount += 1
         }
+        music.measures.append(contentsOf: appended)
     }
 
     /// Step entry: writes a note (or a rest when `pitch` is nil) at `onset` in a part, replacing what

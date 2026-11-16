@@ -93,6 +93,7 @@ public struct ModelClient: Sendable {
             throw ProviderError.unavailable(Self.appleAvailability.message)
         case .ollama(let model):
             guard !model.isEmpty else { throw ProviderError.unavailable("ローカルモデルを選択してください。") }
+            try await OllamaLocalModels.requireLocal(model, session: session)
             let body: [String: Any] = ["model": model, "stream": false, "think": false,
                 "format": try JSONSerialization.jsonObject(with: schema),
                 "messages": [["role": "system", "content": instructions], ["role": "user", "content": input]],

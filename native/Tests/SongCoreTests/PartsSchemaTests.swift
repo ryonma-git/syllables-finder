@@ -62,6 +62,22 @@ struct PartsSchemaTests {
         #expect(migrated.music.events(in: alto).count == 21)
     }
 
+    @Test func versionOneSupportsMoreThan255PartLabelsWithoutTrapping() throws {
+        var song = SongDocument()
+        let part = song.ensurePart()
+        for index in 0..<256 {
+            var note = Note(pitch: 60)
+            note.notation = .init(part: "Part \(index)")
+            song.music.events.append(.init(onset: try Beat(Int64(index)), duration: try Beat(1), content: .note(note), partID: part))
+        }
+        let data = try versionOneJSON(song)
+        let migrated = try SongDocument.decode(data)
+        #expect(migrated.music.parts.count == 256)
+        #expect(Set(migrated.music.parts.map(\.id)).count == 256)
+        #expect(try SongDocument.decode(data) == migrated)
+        try migrated.validate()
+    }
+
     @Test func partReferencesAreValidated() throws {
         var song = TwinkleSample.make()
         song.music.events[0].partID = UUID()

@@ -161,9 +161,11 @@ public struct OllamaPronunciationProvider: Sendable {
                     choice = index
                 } else {
                     guard validIPA(answer.ipa) else { hold("単語全体のIPAが空欄または不正です。"); continue }
-                    choice = allowed.firstIndex {
-                        PronunciationAudit.ipaKey($0, style: style) == PronunciationAudit.ipaKey(answer.ipa, style: style)
+                    let matches = allowed.indices.filter {
+                        PronunciationAudit.ipaKey(allowed[$0], style: style) == PronunciationAudit.ipaKey(answer.ipa, style: style) &&
+                            (!answer.ipa.contains("ˈ") || Self.dictionarySelectionKey(allowed[$0], style: style) == Self.dictionarySelectionKey(answer.ipa, style: style))
                     }
+                    choice = Set(matches.map { Self.dictionarySelectionKey(allowed[$0], style: style) }).count == 1 ? matches.first : nil
                 }
                 guard let choice else {
                     hold("AIが文脈に合う辞書候補を選べませんでした。辞書候補からの再選択が必要です。")
@@ -173,7 +175,7 @@ public struct OllamaPronunciationProvider: Sendable {
                 EnglishPronunciation.storeWhole(ipa, wordID: word.id, source: client.source, in: &prepared)
                 let units = prepared.syllables(in: word)
                 let candidate = EnglishPronunciation.candidates(for: word.surface, texts: units.map(\.text.value), style: style)
-                    .first { PronunciationAudit.ipaKey($0.ipa.joined(), style: style) == PronunciationAudit.ipaKey(ipa, style: style) }
+                    .first { Self.dictionarySelectionKey($0.ipa.joined(), style: style) == Self.dictionarySelectionKey(ipa, style: style) }
                 if let candidate {
                     for (offset, unit) in units.enumerated() {
                         guard let index = prepared.syllables.firstIndex(where: { $0.id == unit.id }) else { continue }
@@ -256,6 +258,11 @@ public struct OllamaPronunciationProvider: Sendable {
             if english { EnglishPronunciation.apply(to: &song, phraseIDs: [phrase.id]) }
         }
         return .init(document: result, issues: issues)
+    }
+
+    private static func dictionarySelectionKey(_ ipa: String, style: EnglishPronunciationStyle) -> String {
+        // Retain primary stress while allowing the same broad transcription normalizations.
+        PronunciationAudit.ipaKey(ipa.replacingOccurrences(of: "ˈ", with: "#"), style: style)
     }
 
     /// A conservative omission check, not proof of pronunciation. A compound with multiple

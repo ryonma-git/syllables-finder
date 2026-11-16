@@ -16,6 +16,19 @@ struct MIDIFileImportTests {
         return Data(bytes)
     }
 
+    @Test func tempoBeforeTheFirstTempoEventUsesTheMIDIDefault() throws {
+        let track: [UInt8] = [0, 0x90, 60, 90] + vlq(480) + [0xFF, 0x51, 3, 0x0F, 0x42, 0x40]
+            + vlq(480) + [0x80, 60, 0, 0, 0xFF, 0x2F, 0]
+        let parsed = try MIDIFileImport.parse(file(format: 0, tracks: [track]))
+        var song = SongDocument()
+        _ = try parsed.apply(to: &song, candidateIDs: [0], replace: true, grid: nil)
+        try song.validate()
+        #expect(song.music.tempos == [.init(bpm: 120), .init(onset: try Beat(1), bpm: 60)])
+        let map = try TempoMap(tempos: song.music.tempos)
+        #expect(map.seconds(at: 1) == 0.5)
+        #expect(map.seconds(at: 2) == 1.5)
+    }
+
     @Test func runningStatusVelocityZeroTempoAndMeter() throws {
         // Conductor track: 3/4, 120 BPM then 60 BPM at beat 3. Melody: running status note-ons, velocity 0 offs.
         let conductor: [UInt8] = [0, 0xFF, 0x58, 4, 3, 2, 24, 8] + [0, 0xFF, 0x51, 3, 0x07, 0xA1, 0x20]

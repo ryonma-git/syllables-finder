@@ -12,6 +12,11 @@ struct SingingView: View {
     @State private var staffScale = Self.overviewScale
 
     private var projection: MeasureProjection { MeasureProjection(song: song) }
+    private var detailWindow: [MeasureSlice]? {
+        let windows = projection.detailWindows
+        guard !windows.isEmpty else { return nil }
+        return windows[min(max(0, session.detailIndex), windows.count - 1)]
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -52,14 +57,14 @@ struct SingingView: View {
                                                 StaffOrTimelineRow(song: song, measures: rows[index], scale: scale,
                                                                    session: session, onMeasureTap: selectMeasure, seek: seek,
                                                                    low: lowPitch, high: highPitch)
-                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(scale)-\(session.singingLayout)-\(session.showReading)-\(session.showIPA)-\(session.textScale)-\(session.partID)")
+                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(scale)-\(session.singingLayout)-\(session.showReading)-\(session.showIPA)-\(session.textScale)-\(session.partID?.uuidString ?? "all")")
                                             }.id(index)
                                         } else {
                                             Group {
                                                 SingingTimelineRow(song: song, measures: rows[index], scale: scale,
                                                                    session: session, onMeasureTap: selectMeasure, seek: seek,
                                                                    staffIssue: nil, low: lowPitch, high: highPitch)
-                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(session.singingLayout)-\(session.partID)")
+                                                    .id("\(song.id)-\(song.revision)-\(index)-\(columns)-\(session.singingLayout)-\(session.partID?.uuidString ?? "all")")
                                             }.id(index)
                                         }
                                     }
@@ -86,6 +91,9 @@ struct SingingView: View {
             .onChange(of: session.phraseID) { _, _ in
                 guard session.guideState != .playing, let range = phrase.timeRange else { return }
                 session.detailIndex = projection.containing(range.start.doubleValue) / 2
+            }
+            .onChange(of: projection.detailWindows.count, initial: true) { _, count in
+                session.detailIndex = min(max(0, session.detailIndex), max(0, count - 1))
             }
         }
     }
@@ -181,11 +189,11 @@ struct SingingView: View {
                         session.followPlayback = false
                     }.disabled(session.detailIndex >= projection.detailWindows.count - 1)
                     Button("表示中の2小節を練習") {
-                        let window = projection.detailWindows[min(session.detailIndex, max(0, projection.detailWindows.count - 1))]
+                        guard let window = detailWindow else { return }
                         if let first = window.first, let last = window.last {
                             applyRange(.init(start: first.range.start, end: last.range.end))
                         }
-                    }
+                    }.disabled(detailWindow == nil)
                 }
                 Button("このフレーズを練習") {
                     guard let range = phrase.timeRange else { return }
@@ -449,7 +457,7 @@ private struct SingingTimelineRow: View {
                     session.guide.audition(pitch: pitch)
                 } label: {
                     Text(Note(pitch: pitch).name).font(.system(size: 10).monospaced())
-                        .foregroundStyle(black ? Color.white : Color.primary)
+                        .foregroundStyle(black ? Color.white : Color.black)
                         .frame(width: left - 6, height: keyHeight, alignment: .leading)
                         .padding(.leading, 4)
                         .background(black ? Color.black.opacity(0.8) : Color.white.opacity(0.85))
@@ -485,6 +493,7 @@ struct NoteEditor: View {
     @State private var velocity = 80
     @State private var showingAlignment = false
     private var event: MusicalEvent? { session.eventID.flatMap { song.event($0) } }
+    private var partID: UUID? { song.music.part(session.partID)?.id ?? song.music.parts.first?.id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -495,8 +504,12 @@ struct NoteEditor: View {
                 Spacer()
                 if session.syllableID != nil {
                     Button("選んだ音節の対応を変更…") { showingAlignment = true }.font(.caption)
+                        .disabled(partID == nil)
                 }
-                if session.noteTool == .edit { Button("音符を追加", systemImage: "plus") { addNote() }.font(.caption) }
+                if session.noteTool == .edit {
+                    Button("音符を追加", systemImage: "plus") { addNote() }.font(.caption)
+                        .disabled(phrase.timeRange == nil)
+                }
             }
             if session.noteTool == .step {
                 StepInputPanel(song: song, session: session, mutate: mutate)
@@ -524,8 +537,8 @@ struct NoteEditor: View {
             .onAppear { load() }.onChange(of: session.eventID) { _, _ in load() }
             .onChange(of: song.revision) { _, _ in load() }
             .sheet(isPresented: $showingAlignment) {
-                if let id = session.syllableID, let syllable = song.syllable(id) {
-                    AlignmentSheet(song: song, phrase: phrase, syllable: syllable, mutate: mutate)
+                if let id = session.syllableID, let syllable = song.syllable(id), let partID {
+                    AlignmentSheet(song: song, phrase: phrase, syllable: syllable, partID: partID, mutate: mutate)
                 }
             }
     }
@@ -552,8 +565,7 @@ struct NoteEditor: View {
             let onset = range.start
             let length = try Beat.grid(min(1, range.length))
             let measure = doc.music.measures.first { $0.range.start <= onset && onset < $0.range.end }?.id
-            doc.ensureParts()
-            let part = doc.music.part(session.partID)?.id ?? doc.music.parts[0].id
+            let part = doc.ensurePart(preferredID: session.partID)
             doc.music.events.append(.init(id: id, onset: onset, duration: length, measureID: measure, content: .note(.init(pitch: 60)), partID: part))
             if let index = doc.phrases.firstIndex(where: { $0.id == phrase.id }) { doc.phrases[index].musicalEventIDs.append(id) }
         }
@@ -565,14 +577,30 @@ struct AlignmentSheet: View {
     let song: SongDocument
     let phrase: Phrase
     let syllable: Syllable
+    let partID: UUID
     let mutate: SongMutation
     @Environment(\.dismiss) private var dismiss
     @State private var selection: Set<UUID> = []
+    private var alignedEventIDs: Set<UUID> {
+        Set(song.alignments.filter { $0.languageTargets.contains(.init(.syllable, syllable.id)) }
+            .flatMap(\.musicTargets).compactMap {
+                if case .event(let id, _) = $0, song.event(id)?.partID == partID { return id }
+                return nil
+            })
+    }
+    private var events: [MusicalEvent] {
+        song.music.events(in: partID).filter { event in
+            if phrase.musicalEventIDs.contains(event.id) || alignedEventIDs.contains(event.id) { return true }
+            guard let range = phrase.timeRange else { return false }
+            return range.start <= event.onset && event.onset < range.end
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("「\(syllable.text.value)」をのせる音符").font(.title2.bold())
             Text("複数の音符を選ぶと、ひとつの音節をのばせます。").foregroundStyle(.secondary)
-            ForEach(phrase.musicalEventIDs.compactMap { song.event($0) }) { event in
+            Text("声部：\(song.music.part(partID)?.name ?? "旋律")").font(.callout.weight(.semibold))
+            ForEach(events) { event in
                 Toggle(isOn: Binding(get: { selection.contains(event.id) }, set: { enabled in
                     if enabled { selection.insert(event.id) } else { selection.remove(event.id) }
                 })) { Text("\(event.note?.name ?? "休符") · 開始 \(event.onset.doubleValue, specifier: "%.2f") 拍") }
@@ -582,16 +610,14 @@ struct AlignmentSheet: View {
                 Spacer()
                 Button("対応を保存") {
                     mutate("音節の対応を変更") { doc in
-                        try doc.align(syllableID: syllable.id, to: phrase.musicalEventIDs.filter { selection.contains($0) })
+                        try doc.align(syllableID: syllable.id, to: events.map(\.id).filter { selection.contains($0) }, inPart: partID)
                     }
                     dismiss()
                 }.buttonStyle(.borderedProminent)
             }
         }.padding(28).frame(width: 430)
             .onAppear {
-                selection = Set(song.alignments.filter { $0.languageTargets.contains(.init(.syllable, syllable.id)) }.flatMap(\.musicTargets).compactMap {
-                    if case .event(let id, _) = $0 { return id }; return nil
-                })
+                selection = alignedEventIDs
             }
     }
 }

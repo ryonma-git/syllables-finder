@@ -50,16 +50,22 @@ final class WorkspaceSession: ObservableObject {
     }
 
     func replace(_ next: SongDocument, in binding: Binding<SongFile>, undo: UndoManager?, name: String) {
-        let previous = binding.wrappedValue.song
+        var package = binding.wrappedValue.package
+        package.song = next
+        replace(package, in: binding, undo: undo, name: name)
+    }
+
+    func replace(_ next: DocumentPackage, in binding: Binding<SongFile>, undo: UndoManager?, name: String) {
+        let previous = binding.wrappedValue.package
         var next = next
-        guard previous.revision < UInt64.max else { error = "編集回数が上限に達しました。"; return }
+        guard previous.song.revision < UInt64.max else { error = "編集回数が上限に達しました。"; return }
         // Undo also advances revision, preventing stale asynchronous results after a restore.
-        next.revision = previous.revision + 1
+        next.song.revision = previous.song.revision + 1
         undo?.registerUndo(withTarget: self) { target in
             MainActor.assumeIsolated { target.replace(previous, in: binding, undo: undo, name: name) }
         }
         undo?.setActionName(name)
-        binding.wrappedValue.song = next
+        binding.wrappedValue.package = next
     }
     func select(_ phrase: Phrase) {
         phraseID = phrase.id; wordID = nil; syllableID = nil; eventID = nil
@@ -74,6 +80,7 @@ struct WorkspaceView: View {
     @State private var showingPronunciationCheck = false
     @EnvironmentObject private var displayPreferences: DisplayPreferences
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.newDocument) private var newDocument
     @State private var addingLyrics = false
     @State private var showingSamples = false
     @State private var selectedSampleID = "twinkle"
@@ -287,13 +294,18 @@ struct WorkspaceView: View {
         .sheet(item: $pendingMIDI) { pending in
             MIDIImportSheet(song: song, pending: pending) { ids, replace, grid in
                 stopPlayback()
-                mutate("MIDIファイルを読み込む") { doc in
-                    let parts = try pending.parsed.apply(to: &doc, candidateIDs: ids, replace: replace, grid: grid)
-                    if let first = parts.first { Task { @MainActor in session.partID = first } }
+                do {
+                    var next = file.package
+                    let parts = try pending.parsed.apply(to: &next.song, candidateIDs: ids, replace: replace, grid: grid)
+                    try next.attach(pending.data, at: ["source", pending.fileName])
+                    // Import and its original source must succeed and undo together.
+                    _ = try next.fileWrapper()
+                    session.replace(next, in: $file, undo: undoManager, name: "MIDIファイルを読み込む")
+                    if let first = parts.first { session.partID = first }
+                    session.position = 0
+                } catch {
+                    session.error = "MIDIファイルを取り込めませんでした。元の文書は保持しています: \(error.localizedDescription)"
                 }
-                do { try file.package.attach(pending.data, at: ["source", pending.fileName]) }
-                catch { session.error = "元のMIDIファイルを文書に保存できませんでした: \(error.localizedDescription)" }
-                session.position = 0
             }
         }
         .sheet(isPresented: $session.showingAlignment) {
@@ -436,7 +448,7 @@ struct WorkspaceView: View {
         return HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("サンプル曲").font(.title2.bold())
-                Text("歌詞や旋律を確認できます。未登録の項目は明示します。")
+                Text("別の新規文書として開きます。現在の曲はそのまま残ります。")
                     .font(.callout).foregroundStyle(.secondary)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 4) {
@@ -496,9 +508,15 @@ struct WorkspaceView: View {
                 HStack {
                     Button("キャンセル", role: .cancel) { showingSamples = false }
                     Spacer()
-                    Button("この曲を開く") {
-                        openSample(preview)
+                    Button("新規文書で開く") {
                         showingSamples = false
+                        do {
+                            let package = try local.map { try LocalSampleLibrary.read($0.url) }
+                                ?? DocumentPackage(song: preview)
+                            openSample(package)
+                        } catch {
+                            session.error = "曲を開けませんでした: \(error.localizedDescription)"
+                        }
                     }.buttonStyle(.borderedProminent)
                 }
             }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -650,21 +668,9 @@ struct WorkspaceView: View {
         catch { session.error = error.localizedDescription }
     }
 
-    private func openSample(_ sample: SongDocument) {
+    private func openSample(_ package: DocumentPackage) {
         stopPlayback()
-        session.replace(sample, in: $file, undo: undoManager, name: "サンプルを読み込み")
-        if let first = file.song.phrases.first { session.select(first) }
-        session.bpm = file.song.music.tempos.first?.bpm ?? 88
-        session.position = 0
-        session.detailIndex = 0
-        session.playbackScope = .whole
-        if sample.words.isEmpty && sample.music.events.contains(where: { $0.note != nil }) {
-            session.mode = .singing
-        }
-        let first = Array(MeasureProjection(song: file.song).slices.prefix(2))
-        if let start = first.first?.range.start, let end = first.last?.range.end {
-            session.practiceRange = .init(start: start, end: end)
-        } else { session.practiceRange = nil }
+        newDocument(SongFile(package: package))
     }
 
     private func chooseMIDIFile() {

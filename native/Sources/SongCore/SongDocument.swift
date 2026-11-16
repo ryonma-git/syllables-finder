@@ -2,6 +2,7 @@ import Foundation
 
 public struct SongDocument: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 2
+    static let maximumEncodedBytes = 20_000_000
     public var schemaVersion = currentSchemaVersion
     public var id = UUID()
     public var revision: UInt64 = 0
@@ -68,7 +69,9 @@ public struct SongDocument: Codable, Equatable, Sendable {
         try validate()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(self)
+        let data = try encoder.encode(self)
+        guard data.count <= Self.maximumEncodedBytes else { throw SongError.invalid("文書が大きすぎます（上限20MB）。") }
+        return data
     }
 
     public static func decode(_ data: Data) throws -> SongDocument {
@@ -78,7 +81,7 @@ public struct SongDocument: Codable, Equatable, Sendable {
     /// Decodes the current schema, or migrates a version 1 document in memory. The caller keeps
     /// the original bytes when `migratedFrom` is set, so saving never loses the old file.
     public static func decodeReportingMigration(_ data: Data) throws -> (document: SongDocument, migratedFrom: Int?) {
-        guard data.count <= 20_000_000 else { throw SongError.invalid("文書が大きすぎます（上限20MB）。") }
+        guard data.count <= Self.maximumEncodedBytes else { throw SongError.invalid("文書が大きすぎます（上限20MB）。") }
         struct Header: Decodable { var schemaVersion: Int }
         let decoder = JSONDecoder()
         let header = try decoder.decode(Header.self, from: data)
@@ -110,7 +113,7 @@ public struct SongDocument: Codable, Equatable, Sendable {
         }
         for (index, label) in labels.enumerated() {
             let pitches = music.events.filter { $0.note?.notation?.part == label }.compactMap { $0.note?.pitch }
-            music.parts.append(.init(id: Self.derivedID(id, salt: UInt8(index + 1)), name: label, clef: .suggested(forPitches: pitches)))
+            music.parts.append(.init(id: Self.derivedID(id, salt: UInt64(index) + 1), name: label, clef: .suggested(forPitches: pitches)))
         }
         for index in music.events.indices {
             let label = music.events[index].note?.notation?.part
@@ -131,9 +134,21 @@ public struct SongDocument: Codable, Equatable, Sendable {
         }
     }
 
-    static func derivedID(_ base: UUID, salt: UInt8) -> UUID {
+    /// Returns a usable part even before the first note has been entered.
+    @discardableResult
+    public mutating func ensurePart(preferredID: UUID? = nil, name: String = "旋律") -> UUID {
+        if let preferredID, music.part(preferredID) != nil { return preferredID }
+        if let first = music.parts.first { return first.id }
+        return addPart(name: name)
+    }
+
+    static func derivedID(_ base: UUID, salt: UInt64) -> UUID {
         var bytes = base.uuid
-        bytes.15 ^= salt; bytes.14 ^= 0xA5
+        // Keep the IDs already produced for salts 1...255, while supporting larger scores.
+        withUnsafeMutableBytes(of: &bytes) { raw in
+            for offset in 0..<8 { raw[15 - offset] ^= UInt8(truncatingIfNeeded: salt >> (offset * 8)) }
+        }
+        bytes.14 ^= 0xA5
         return UUID(uuid: bytes)
     }
 

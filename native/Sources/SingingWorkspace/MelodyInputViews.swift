@@ -205,7 +205,7 @@ struct StepInputPanel: View {
             Picker("拍子", selection: Binding(get: { "\(song.music.meters.first?.numerator ?? 4)/\(song.music.meters.first?.denominator ?? 4)" }, set: { text in
                 let parts = text.split(separator: "/").compactMap { Int($0) }
                 guard parts.count == 2 else { return }
-                mutate("拍子を設定") { doc in doc.music.meters = [.init(numerator: parts[0], denominator: parts[1])]; doc.music.measures = [] }
+                mutate("拍子を設定") { try $0.setInitialMeter(numerator: parts[0], denominator: parts[1]) }
             })) { ForEach(["2/4", "3/4", "4/4", "2/2", "3/8", "6/8", "9/8", "12/8"], id: \.self) { Text($0).tag($0) } }.frame(width: 120)
             Stepper("テンポ \(Int(song.music.tempos.first?.bpm ?? 88))", onIncrement: { setTempo(+4) }, onDecrement: { setTempo(-4) })
         }.font(.callout)
@@ -214,7 +214,7 @@ struct StepInputPanel: View {
     private func setTempo(_ delta: Double) {
         mutate("テンポを設定") { doc in
             let bpm = min(300, max(20, (doc.music.tempos.first?.bpm ?? 88) + delta))
-            doc.music.tempos = [.init(bpm: bpm)]
+            try doc.setInitialTempo(bpm: bpm)
         }
         session.bpm = song.music.tempos.first?.bpm ?? session.bpm
     }

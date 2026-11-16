@@ -3,6 +3,67 @@ import Testing
 import SongCore
 
 struct EnglishPronunciationTests {
+    @Test func consonantHomographsWaitForContextAndRecheckOldAutomaticFields() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "We use it", language: "en", syllabify: true)
+        song.appendPhrase(text: "Close it", language: "en", syllabify: true)
+        for surface in ["use", "Close"] {
+            let word = try #require(song.words.first { $0.surface == surface })
+            #expect(song.syllables(in: word).allSatisfy { $0.ipa.value.isEmpty && $0.reading.value.isEmpty })
+            let i = try #require(song.syllables.firstIndex { $0.parentWordID == word.id })
+            song.syllables[i].ipa = .init(surface == "use" ? "ˈjuːs" : "ˈkloʊs", source: EnglishPronunciation.source)
+            song.syllables[i].reading = .init(surface == "use" ? "ユース" : "クロウス", source: EnglishPronunciation.source)
+        }
+        let ids = song.syllables.map(\.id)
+        let report = EnglishPronunciation.apply(to: &song)
+        #expect(report.changedWords == 2)
+        #expect(report.reviewSurfaces.contains("use") && report.reviewSurfaces.contains("Close"))
+        for word in song.words where ["use", "Close"].contains(word.surface) {
+            #expect(song.syllables(in: word).allSatisfy { $0.ipa.value.isEmpty && $0.reading.value.isEmpty })
+        }
+        #expect(song.syllables.map(\.id) == ids)
+        let repeated = EnglishPronunciation.apply(to: &song)
+        #expect(repeated.changedWords == 0)
+        try song.validate()
+    }
+
+    @Test func contextualPronunciationRetainsManualAndAISelections() throws {
+        for source in [FieldSource(.manual), FieldSource(.ai, provider: "test", model: "context-model")] {
+            var song = SongDocument()
+            song.appendPhrase(text: "use", language: "en", syllabify: true)
+            song.syllables[0].ipa = .init("ˈjuːz", source: source, userEdited: source.kind == .manual)
+            song.syllables[0].reading = .init("ユーズ", source: source, userEdited: source.kind == .manual)
+            EnglishPronunciation.apply(to: &song)
+            EnglishPronunciation.apply(to: &song)
+            #expect(song.syllables[0].ipa.value == "ˈjuːz")
+            #expect(!song.syllables[0].reading.value.isEmpty)
+            #expect(song.syllables[0].ipa.source == source)
+        }
+    }
+
+    @Test func lexicalStressAmbiguityDoesNotReturnAsAWholeWordFallback() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "increase", language: "en", syllabify: true)
+        #expect(song.syllables.allSatisfy { $0.ipa.value.isEmpty })
+        #expect(song.words[0].wholePronunciation == nil)
+        let texts = song.syllables.map(\.text.value)
+        let forms = EnglishPronunciation.candidates(for: "increase", texts: texts)
+        #expect(Set(forms.compactMap(\.stressIndex)) == [0, 1])
+        for form in forms {
+            let retained = EnglishPronunciation.candidate(for: "increase", texts: texts, currentIPA: form.ipa)
+            #expect(retained == form)
+        }
+    }
+
+    @Test func multilingualIPAAdmitsOfficialSymbolsAndRequiresPhones() {
+        for ipa in ["beˈβe", "baχ", "ħa", "ǃa", "ɲɔ̃", "a˥˩", "t͡ʃ", "ŋ"] {
+            #expect(EnglishPronunciation.isValidIPA(ipa), "\(ipa)")
+        }
+        for text in ["...", "/[]", "ˈˌː", "̃", "123", "カタカナ", "<script>"] {
+            #expect(!EnglishPronunciation.isValidIPA(text), "\(text)")
+        }
+    }
+
     @Test func newInputUsesDictionaryCountForAdjacentVowelHiatus() {
         #expect(EnglishPronunciation.reading(forIPA: "raː") == "ラー")
         #expect(EnglishPronunciation.reading(forIPA: "wɪnd") == "ウィンド")
@@ -19,7 +80,7 @@ struct EnglishPronunciationTests {
             ("creation", "krieɪʃən", ["クリ", "エイ", "ション"]),
             ("heaven", "hɛvən", ["ヘ", "ヴン"]), ("I've", "aɪv", ["アイヴ"]),
             ("won't", "woʊnt", nil), ("you've", "juv", ["ユーヴ"]), ("wonder", "wʌndər", nil),
-            ("action", "ækʃən", ["アク", "ション"]), ("question", "kwɛstʃən", nil),
+            ("action", "ækʃən", ["アク", "ション"]),
             ("creature", "kritʃər", nil), ("explanation", "ɛkspləneɪʃən", nil),
             ("feelin's", "filɪnz", nil), ("lookin'", "lʊkɪn", nil), ("tellin'", "tɛlɪn", nil)
         ]
@@ -29,6 +90,15 @@ struct EnglishPronunciationTests {
             #expect(EnglishPronunciation.comparableIPA(result.ipa.joined()) == ipa, "\(word): \(result.ipa)")
             if let readings { #expect(result.readings == readings, "\(word)") }
         }
+        // CMUdict also contains /kwɛʃən/. Distinct consonant forms now wait for selection;
+        // both whole-word pronunciations remain available, including the previously expected form.
+        let questionSplit = Syllabifier.syllabify("question", language: "en").syllables
+        let questionCandidates = EnglishPronunciation.candidates(for: "question", texts: questionSplit)
+        #expect(Set(questionCandidates.map { EnglishPronunciation.comparableIPA($0.ipa.joined()) }) == ["kwɛstʃən", "kwɛʃən"])
+        #expect(EnglishPronunciation.candidate(for: "question", texts: questionSplit) == nil)
+        let selected = try #require(questionCandidates.first { EnglishPronunciation.comparableIPA($0.ipa.joined()) == "kwɛstʃən" })
+        let retained = EnglishPronunciation.candidate(for: "question", texts: questionSplit, currentIPA: selected.ipa)
+        #expect(retained == selected)
         #expect(Syllabifier.syllabify("Creation!", language: "en").syllables == ["Cre", "a", "tion"])
         #expect(Syllabifier.syllabify("station", language: "en").syllables == ["sta", "tion"])
         #expect(Syllabifier.syllabify("cation", language: "en").syllables == ["cat", "i", "on"])

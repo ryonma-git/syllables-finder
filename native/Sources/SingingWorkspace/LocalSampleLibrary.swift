@@ -45,7 +45,7 @@ enum LocalSampleLibrary {
         return destination
     }
 
-    private static func read(_ url: URL) throws -> DocumentPackage {
+    static func read(_ url: URL) throws -> DocumentPackage {
         let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard values.isDirectory == true, values.isSymbolicLink != true else {
             throw SongError.invalid("歌唱練習ドキュメントを読み込めません。")

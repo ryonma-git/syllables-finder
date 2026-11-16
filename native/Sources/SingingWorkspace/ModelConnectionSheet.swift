@@ -37,6 +37,8 @@ struct ModelConnectionSheet: View {
                     GroupBox("このMacのローカルLLM · Ollama") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(localStatus).font(.callout)
+                            Text("このMacでの実行を確認できたモデルだけを使います。Ollamaのクラウドモデル・実行先が不明なモデルは使いません。外部AIは下のAPIで送信を許可してください。")
+                                .font(.caption).foregroundStyle(.secondary)
                             Picker("モデル", selection: $draft.localModel) {
                                 Text("自動選択（Qwen優先）").tag("")
                                 ForEach(models, id: \.self) { Text($0).tag($0) }
@@ -120,9 +122,11 @@ struct ModelConnectionSheet: View {
         task = Task { @MainActor in
             defer { working = false }
             do {
-                models = try await OllamaProvider.models(); try Task.checkCancellation()
+                let inventory = try await OllamaLocalModels.inventory(); try Task.checkCancellation()
+                models = inventory.local
                 ollamaReachable = true
-                localStatus = "接続済み · \(models.count)モデル検出（応答テストは未実行）"
+                localStatus = "接続済み · このMacで使えるモデル \(models.count)件（応答テストは未実行）"
+                if !inventory.excluded.isEmpty { localStatus += "。クラウド・実行先未確認 \(inventory.excluded.count)件は除外しました。" }
                 if !models.contains(draft.localModel) { draft.localModel = "" }
             } catch {
                 ollamaReachable = false; models = []
@@ -135,9 +139,11 @@ struct ModelConnectionSheet: View {
         task = Task { @MainActor in
             do {
                 try await OllamaModelDownload.run(model: downloadModel) { message = $0 }
-                models = try await OllamaProvider.models(); try Task.checkCancellation()
+                let inventory = try await OllamaLocalModels.inventory(); try Task.checkCancellation()
+                models = inventory.local
                 if models.contains(downloadModel) { draft.localModel = downloadModel }
-                localStatus = "\(models.count)モデル検出。応答テストで確認できます。"
+                localStatus = "このMacで使えるモデル \(models.count)件。応答テストで確認できます。"
+                if !inventory.excluded.isEmpty { localStatus += "クラウド・実行先未確認 \(inventory.excluded.count)件は除外しました。" }
             } catch { message = Task.isCancelled ? "ダウンロードを中止しました。" : error.localizedDescription }
             working = false
         }

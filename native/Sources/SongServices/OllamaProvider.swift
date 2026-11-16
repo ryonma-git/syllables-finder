@@ -15,16 +15,12 @@ public struct OllamaProvider: AIProvider {
     }
 
     public static func models(session: URLSession = .shared) async throws -> [String] {
-        var request = URLRequest(url: URL(string: "http://127.0.0.1:11434/api/tags")!)
-        request.timeoutInterval = 5
-        let (data, response) = try await session.data(for: request)
-        try check(data, response)
-        struct List: Decodable { struct Model: Decodable { var name: String }; var models: [Model] }
-        return try JSONDecoder().decode(List.self, from: data).models.map(\.name).sorted()
+        try await OllamaLocalModels.inventory(session: session).local
     }
 
     public func analyze(request: LinguisticAnalysisRequest) async throws -> LinguisticAnalysis {
         guard !model.isEmpty else { throw ProviderError.unavailable("Ollamaのモデルを選択してください。") }
+        try await OllamaLocalModels.requireLocal(model, session: session)
         let input = String(decoding: try JSONEncoder().encode(request), as: UTF8.self)
         let properties: [String: Any] = [
             "id": ["type": "string"], "lemma": ["type": "string"], "partOfSpeech": ["type": "string"],
@@ -46,7 +42,8 @@ public struct OllamaProvider: AIProvider {
         http.httpMethod = "POST"; http.timeoutInterval = disableThinking ? 180 : 90
         http.setValue("application/json", forHTTPHeaderField: "Content-Type")
         http.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await session.data(for: http)
+        let (data, response) = try await session.data(for: http, delegate: NoOllamaRedirect())
+        try Task.checkCancellation()
         try Self.check(data, response)
         struct Response: Decodable { struct Message: Decodable { var content: String }; var message: Message }
         do {

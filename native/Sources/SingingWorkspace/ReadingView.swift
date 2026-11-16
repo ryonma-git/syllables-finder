@@ -137,6 +137,9 @@ struct ReadingView: View {
 
     private func phraseLine(_ phrase: Phrase) -> some View {
         VStack(alignment: .leading, spacing: 3 * session.textScale) {
+            Text(phrase.originalText)
+                .font(.system(size: 20 * session.textScale, weight: .semibold, design: .serif))
+                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
             if !preferences.readingOrder.beforeTranslation.isEmpty {
                 wordBlock(phrase, elements: preferences.readingOrder.beforeTranslation)
             }
@@ -153,11 +156,6 @@ struct ReadingView: View {
 
     private func wordBlock(_ phrase: Phrase, elements: [ReadingElement]) -> some View {
         VStack(alignment: .leading, spacing: 3 * session.textScale) {
-            if elements.first == .original {
-                Text(phrase.originalText)
-                    .font(.system(size: 20 * session.textScale, weight: .semibold, design: .serif))
-                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            }
             LyricsFlowLayout(horizontalSpacing: 8 * session.textScale, verticalSpacing: 5 * session.textScale) {
                 ForEach(song.words(in: phrase)) { word in
                     Button {
@@ -170,7 +168,7 @@ struct ReadingView: View {
                                         elements: elements)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.pronunciationDisplay(for: word).reading)、詳細を編集")
+                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.pronunciationDisplay(for: word).reading)、IPA \(song.pronunciationDisplay(for: word).ipa)、詳細を編集")
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -227,7 +225,8 @@ private struct InterlinearWord: View {
                 case .reading: reading
                 case .ipa:
                     Text(item.ipa.isEmpty ? "IPA未設定" : item.ipa)
-                        .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.system(size: 10 * scale)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 case .meaning: meaning
                 case .translation: EmptyView()
                 }
@@ -247,11 +246,13 @@ private struct InterlinearWord: View {
     }
     private var meaning: some View {
         Text(printWord.meaning.isEmpty ? "意味未設定" : printWord.meaning)
-            .font(.system(size: 10 * scale)).foregroundStyle(.secondary).lineLimit(1)
+            .font(.system(size: 10 * scale)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
     private var reading: some View {
         Text(printWord.reading.isEmpty ? "カタカナ未設定" : printWord.reading)
-            .font(.system(size: 11 * scale, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
+            .font(.system(size: 11 * scale, weight: .medium)).foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

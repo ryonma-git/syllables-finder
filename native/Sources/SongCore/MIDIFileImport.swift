@@ -145,7 +145,7 @@ public struct MIDIFileImport: Sendable {
                 if let last = newTempos.last, last.onset == onset { newTempos[newTempos.count - 1].bpm = tempo.bpm }
                 else { newTempos.append(.init(onset: onset, bpm: min(1000, max(1, tempo.bpm)))) }
             }
-            if newTempos.first?.onset != .zero { newTempos.insert(.init(bpm: newTempos.first?.bpm ?? 120), at: 0) }
+            if newTempos.first?.onset != .zero { newTempos.insert(.init(bpm: 120), at: 0) }
             song.music.tempos = newTempos
             var newMeters: [Meter] = []
             for meter in meters {

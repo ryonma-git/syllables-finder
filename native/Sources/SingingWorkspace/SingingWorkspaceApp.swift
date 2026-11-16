@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import SongCore
 import UniformTypeIdentifiers
 
@@ -14,6 +15,7 @@ struct SongFile: FileDocument {
         set { package.song = newValue }
     }
     init(song: SongDocument = .init()) { package = .init(song: song) }
+    init(package: DocumentPackage) { self.package = package }
     init(configuration: ReadConfiguration) throws { package = try .init(reading: configuration.file) }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { try package.fileWrapper() }
 }
@@ -30,6 +32,16 @@ struct SingingWorkspaceApp: App {
                 .environmentObject(modelSettings)
         }
         .defaultSize(width: 1180, height: 790)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("Singing Workspaceについて") {
+                    let revision = Bundle.main.object(forInfoDictionaryKey: "SingingWorkspaceSourceRevision") as? String ?? "未記録"
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .credits: NSAttributedString(string: "ソース版: \(revision)")
+                    ])
+                }
+            }
+        }
 
         Settings {
             DisplaySettingsView(preferences: displayPreferences)

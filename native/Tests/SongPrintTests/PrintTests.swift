@@ -6,6 +6,73 @@ import Testing
 
 @MainActor
 struct PrintTests {
+    @Test func oversizedOriginalTranslationAndWordColumnsKeepEveryLineInsidePages() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Blue sky", language: "en", syllabify: true)
+        func lines(_ prefix: String, count: Int) -> String {
+            (1...count).map { String(format: "%@%03d 日本語の内容", prefix, $0) }.joined(separator: "\n")
+        }
+        song.phrases[0].originalText = lines("ORIGINAL", count: 100)
+        song.phrases[0].translation.edit(lines("TRANSLATION", count: 100))
+        song.words[0].contextualMeaning.edit(lines("GLOSS", count: 100))
+        song.words[1].contextualMeaning.edit(lines("SECOND", count: 35))
+        let splitOrder = try #require(ReadingOrder([.reading, .translation, .original, .meaning, .ipa]))
+        for (design, order) in [(PrintDesign.standard, ReadingOrder.baseline),
+                                (.compact, .previous), (.largePrint, splitOrder)] {
+            var appearance = PrintAppearance()
+            appearance.design = design
+            let pdf = try #require(PDFDocument(data: PDFSheet.render(PrintSheet(song: song, order: order, appearance: appearance))))
+            #expect(pdf.pageCount > 3)
+            for (prefix, count) in [("ORIGINAL", 100), ("TRANSLATION", 100), ("GLOSS", 100), ("SECOND", 35)] {
+                for index in 1...count {
+                    let marker = String(format: "%@%03d", prefix, index)
+                    let matches = pdf.findString(marker, withOptions: [])
+                    #expect(matches.count == 1, "Missing or repeated \(marker), design \(design)")
+                    let match = try #require(matches.first)
+                    let page = try #require(match.pages.first)
+                    let bounds = match.bounds(for: page)
+                    let paper = page.bounds(for: .mediaBox)
+                    // Body text must remain clear of the footer and repeated page header.
+                    #expect(bounds.minY >= 50, "Below printable area: \(marker)")
+                    #expect(bounds.maxY <= paper.maxY - 85, "Overlaps header: \(marker)")
+                    #expect(bounds.minX >= 27 && bounds.maxX <= paper.maxX - 27)
+                }
+            }
+        }
+    }
+
+    @Test func wrappedAndMultipageTitlesDoNotOverlapLyricsOrLoseText() throws {
+        for count in [12, 50, 500] {
+            var song = SongDocument()
+            song.appendPhrase(text: "BodyStart", language: "en", syllabify: false)
+            song.metadata.title = (1...count).map { String(format: "TITLE%03d", $0) }.joined(separator: " ")
+            let pdf = try #require(PDFDocument(data: PDFSheet.render(PrintSheet(song: song))))
+            var lastTitlePage = 0
+            var lastTitleBottom = CGFloat.greatestFiniteMagnitude
+            for index in 1...count {
+                let marker = String(format: "TITLE%03d", index)
+                let matches = pdf.findString(marker, withOptions: [])
+                #expect(!matches.isEmpty, "Missing title text: \(marker)")
+                let match = try #require(matches.first)
+                let page = try #require(match.pages.first)
+                let bounds = match.bounds(for: page)
+                #expect(bounds.minY >= 50)
+                #expect(bounds.maxY <= page.bounds(for: .mediaBox).maxY - 25)
+                if index == count {
+                    lastTitlePage = pdf.index(for: page)
+                    lastTitleBottom = bounds.minY
+                }
+            }
+            let body = try #require(pdf.findString("BodyStart", withOptions: []).first)
+            let bodyPage = try #require(body.pages.first)
+            let bodyPageIndex = pdf.index(for: bodyPage)
+            #expect(bodyPageIndex >= lastTitlePage)
+            if bodyPageIndex == lastTitlePage {
+                #expect(body.bounds(for: bodyPage).maxY < lastTitleBottom)
+            }
+        }
+    }
+
     @Test func continuousOriginalPrecedesAnnotationsInEveryOrder() throws {
         var song = SongDocument()
         song.appendPhrase(text: "Bonjour, amie !", language: "fr", syllabify: true)

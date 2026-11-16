@@ -46,11 +46,17 @@ public enum EnglishPronunciation {
         language.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first == "en"
     }
 
-    /// Shared syntax check for generation and review. ŋ is outside the IPA Extensions block.
+    /// IPA spans several Unicode blocks. Syntax acceptance is separate from the English kana renderer.
     public static func isValidIPA(_ value: String) -> Bool {
         let text = value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "/[]")))
-        return !text.isEmpty && text.count <= 100 && text.unicodeScalars.allSatisfy {
-            (0x61...0x7A).contains($0.value) || (0x0250...0x036F).contains($0.value) || "æçðøœθŋ /[].·".unicodeScalars.contains($0)
+        let additionalPhones = "æçðøœθŋβχħǀǁǂǃʘɡꞵꭓ".unicodeScalars
+        func isPhone(_ scalar: Unicode.Scalar) -> Bool {
+            (0x61...0x7A).contains(scalar.value) || (0x0250...0x02AF).contains(scalar.value)
+                || additionalPhones.contains(scalar)
+        }
+        return !text.isEmpty && text.count <= 100 && text.unicodeScalars.contains(where: isPhone)
+            && text.unicodeScalars.allSatisfy {
+            isPhone($0) || (0x02B0...0x036F).contains($0.value) || " /[].·".unicodeScalars.contains($0)
         }
     }
 
@@ -270,17 +276,29 @@ public enum EnglishPronunciation {
         return kana(phones, geminate: true, lengthened: value.contains("ː") && phones.filter(isVowel).count == 1)
     }
 
-    /// Homographs need context. Retain a matching pronunciation; otherwise only auto-select
-    /// when the dictionary has one vowel sequence (or a specified common function-word form).
+    private static let defaultForms: Set<String> = ["a", "an", "are", "the", "for", "from", "to", "of", "and", "that", "can", "been", "your", "you're"]
+
+    private static func selectionKey(_ candidate: Candidate) -> String {
+        phoneticKey(candidate.ipa.joined()) + "|" + String(candidate.ipa.count > 1 ? candidate.stressIndex ?? -1 : 0)
+    }
+
+    /// Consonants and lexical stress can distinguish a verb from a noun as well as vowels.
+    public static func needsContext(for surface: String, texts: [String], style: EnglishPronunciationStyle = .american) -> Bool {
+        guard !defaultForms.contains(key(surface)) else { return false }
+        let forms = Set(candidates(for: surface, texts: texts, style: style).map(selectionKey))
+        return forms.count > 1
+    }
+
+    /// Retain a context-selected pronunciation; otherwise leave distinct dictionary forms for review.
     public static func candidate(for surface: String, texts: [String], currentIPA: [String] = [], style: EnglishPronunciationStyle = .american) -> Candidate? {
         let candidates = candidates(for: surface, texts: texts, style: style)
-        if let matching = candidates.first(where: { phoneticKey($0.ipa.joined()) == phoneticKey(currentIPA.joined()) }) {
+        if let matching = candidates.first(where: {
+            phoneticKey($0.ipa.joined()) == phoneticKey(currentIPA.joined()) &&
+                (currentIPA.count <= 1 || currentIPA.firstIndex(where: { $0.contains("ˈ") }) == $0.stressIndex)
+        }) {
             return matching
         }
-        let defaults: Set<String> = ["a", "an", "are", "the", "for", "from", "to", "of", "and", "that", "can", "been", "your", "you're"]
-        if defaults.contains(key(surface)) { return candidates.first }
-        let vowels = Set(candidates.map { comparableIPA($0.ipa.joined()).filter { "ɑɒæɔaʊɪɛeiouəʌɜ".contains($0) } })
-        return vowels.count == 1 ? candidates.first : nil
+        return needsContext(for: surface, texts: texts, style: style) ? nil : candidates.first
     }
 
     /// Repair in place, preserving IDs, note links, manual fields and explicit phoneme/mora data.
@@ -292,8 +310,27 @@ public enum EnglishPronunciation {
         var report = Report()
         for phrase in song.phrases where supports(song.language(of: phrase)) && (phraseIDs?.contains(phrase.id) ?? true) {
             for word in song.words(in: phrase) where !excludingWordIDs.contains(word.id) {
-                let current = song.syllables(in: word)
+                var current = song.syllables(in: word)
                 guard !current.isEmpty else { report.review(word.surface); continue }
+                // Older versions picked the first dictionary form when only consonants differed.
+                // Reopen those automatic fields for context selection, preserving all human edits,
+                // singing structure and any pronunciation already selected by an AI or a person.
+                if needsContext(for: word.surface, texts: current.map(\.text.value), style: style),
+                   current.allSatisfy({ !$0.ipa.userEdited && !$0.reading.userEdited && !$0.stress.userEdited &&
+                       !$0.structureUserEdited && $0.phonemeIDs.isEmpty && $0.moraIDs.isEmpty &&
+                       $0.ipa.source.kind == .dictionary && $0.reading.source.kind == .dictionary }),
+                   word.wholePronunciation == nil || word.wholePronunciation?.source.kind == .dictionary {
+                    let previous = current
+                    for unit in current {
+                        guard let i = song.syllables.firstIndex(where: { $0.id == unit.id }) else { continue }
+                        song.syllables[i].ipa.accept("", source: source)
+                        song.syllables[i].reading.accept("", source: source)
+                        song.syllables[i].stress.accept("", source: source)
+                    }
+                    if let i = song.words.firstIndex(where: { $0.id == word.id }) { song.words[i].wholePronunciation = nil }
+                    current = song.syllables(in: word)
+                    if current != previous || word.wholePronunciation != nil { report.changedWords += 1 }
+                }
                 var texts = current.map(\.text.value)
                 let spelling = spelling(for: key(word.surface))
                 let canResplit = !word.structureUserEdited && current.allSatisfy {
@@ -319,7 +356,7 @@ public enum EnglishPronunciation {
                 }
                 guard let candidate = candidate(for: word.surface, texts: texts, currentIPA: current.map(\.ipa.value), style: style) else {
                     let whole = wholeCandidates(for: word.surface, style: style)
-                    let keys = Set(whole.map { comparableIPA($0.ipa.joined()) })
+                    let keys = Set(whole.map(selectionKey))
                     if keys.count == 1, let first = whole.first,
                        !current.contains(where: { $0.ipa.userEdited || $0.reading.userEdited }) {
                         let before = song.word(word.id)?.wholePronunciation
@@ -341,9 +378,11 @@ public enum EnglishPronunciation {
                     // A manually changed IPA can express a deliberate accent or singing variant.
                     // Do not assign a contradictory reading to it.
                     if !syllable.ipa.userEdited {
-                        song.syllables[index].ipa.accept(candidate.ipa[position], source: source)
-                        song.syllables[index].reading.accept(candidate.readings[position], source: source)
-                        song.syllables[index].stress.accept(position == candidate.stressIndex ? "強" : "", source: source)
+                        let resolvedSource = syllable.ipa.source.kind == .ai &&
+                            needsContext(for: word.surface, texts: texts, style: style) ? syllable.ipa.source : source
+                        song.syllables[index].ipa.accept(candidate.ipa[position], source: resolvedSource)
+                        song.syllables[index].reading.accept(candidate.readings[position], source: resolvedSource)
+                        song.syllables[index].stress.accept(position == candidate.stressIndex ? "強" : "", source: resolvedSource)
                     } else if phoneticKey(syllable.ipa.value) == phoneticKey(candidate.ipa[position]) {
                         song.syllables[index].reading.accept(candidate.readings[position], source: source)
                     }

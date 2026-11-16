@@ -14,6 +14,7 @@ private final class PronunciationStub: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if LocalOllamaFixture.respondToMetadata(self) { return }
         do {
             let answer = Self.state.lock.withLock {
                 Self.state.calls += 1
@@ -30,6 +31,66 @@ private final class PronunciationStub: URLProtocol, @unchecked Sendable {
 
 @Suite(.serialized)
 struct PronunciationTests {
+    @Test func dictionaryChoicePreservesTheSelectedLexicalStress() async throws {
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let messages = body["messages"] as! [[String: String]]
+            let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+            let words = input["words"] as! [[String: Any]]
+            let word = words[0], choices = word["dictionaryIPA"] as! [String]
+            let index = try #require(choices.firstIndex { $0.hasPrefix("ˈ") })
+            let answer = try JSONSerialization.data(withJSONObject: ["words": [["id": word["id"]!, "dictionaryChoice": index, "ipa": choices[index], "syllables": []]]])
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": String(decoding: answer, as: UTF8.self)]])
+        }
+        defer { session.invalidateAndCancel() }
+        var song = SongDocument(); song.appendPhrase(text: "increase", language: "en", syllabify: true)
+        let result = try await OllamaPronunciationProvider(model: "context", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
+        #expect(result.issues.isEmpty)
+        #expect(result.document.syllables[0].ipa.value.contains("ˈ"))
+        #expect(!result.document.syllables[1].ipa.value.contains("ˈ"))
+    }
+
+    @Test func contextualModelReceivesConsonantHomographsIncludingOldDictionaryOutput() async throws {
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let messages = body["messages"] as! [[String: String]]
+            let input = try JSONSerialization.jsonObject(with: Data(messages[1]["content"]!.utf8)) as! [String: Any]
+            let words = input["words"] as! [[String: Any]]
+            #expect(words.count == 1)
+            let word = words[0]
+            #expect(["use", "Close"].contains(word["surface"] as! String))
+            let choices = word["dictionaryIPA"] as! [String]
+            let index = try #require(choices.firstIndex { $0.hasSuffix("z") })
+            let answer = try JSONSerialization.data(withJSONObject: ["words": [["id": word["id"]!, "dictionaryChoice": index, "ipa": choices[index], "syllables": []]]])
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": String(decoding: answer, as: UTF8.self)]])
+        }
+        defer { session.invalidateAndCancel() }
+        for (line, surface, wrong) in [("We use it", "use", "ˈjuːs"), ("Close it", "Close", "ˈkloʊs")] {
+            var song = SongDocument(); song.appendPhrase(text: line, language: "en", syllabify: true)
+            let word = try #require(song.words.first { $0.surface == surface })
+            let i = try #require(song.syllables.firstIndex { $0.parentWordID == word.id })
+            song.syllables[i].ipa = .init(wrong, source: EnglishPronunciation.source)
+            song.syllables[i].reading = .init("以前の自動候補", source: EnglishPronunciation.source)
+            let result = try await OllamaPronunciationProvider(model: "context", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
+            #expect(result.document.syllables[i].ipa.value.hasSuffix("z"))
+            #expect(result.issues.isEmpty)
+            #expect(result.document.syllables.map(\.id) == song.syllables.map(\.id))
+        }
+    }
+
+    @Test func validSpanishIPAIsAppliedRatherThanHeldAsMalformed() async throws {
+        let session = session { _ in
+            let answer = #"{"words":[{"id":0,"ipa":"beˈβe","syllables":[{"id":0,"ipa":"be","reading":"ベ"},{"id":1,"ipa":"ˈβe","reading":"ベ"}]}]}"#
+            return try JSONSerialization.data(withJSONObject: ["message": ["content": answer]])
+        }
+        defer { session.invalidateAndCancel() }
+        var song = SongDocument(); song.appendPhrase(text: "bebé", language: "es", syllabify: true)
+        let result = try await OllamaPronunciationProvider(model: "spanish", session: session).annotateWithReport(phrase: song.phrases[0], in: song)
+        #expect(result.issues.isEmpty)
+        #expect(result.document.syllables.map(\.ipa.value) == ["be", "ˈβe"])
+        #expect(result.document.syllables.map(\.id) == song.syllables.map(\.id))
+    }
+
     private func session(_ answer: @escaping @Sendable (URLRequest) throws -> Data) -> URLSession {
         PronunciationStub.state.lock.withLock {
             PronunciationStub.state.calls = 0

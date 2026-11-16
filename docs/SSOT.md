@@ -39,6 +39,8 @@ native/scripts/build-app.sh
 
 `native/新アプリを起動.command` はビルドと起動を行いますが、Gitのfetch・更新・既存プロセスの終了は行いません。先に上記の確認を済ませてください。アプリの表示バージョン `0.1.0` は複数のcommitで共通なので、版の根拠には使えません。
 
+2026-11-17以降の `build-app.sh` はビルド元のcommitをInfo.plistへ記録します。「Singing Workspaceについて」の「ソース版」で確認できます。未commit変更があるビルドには「変更あり」と付きます。この表示は起動した実行物の補助情報であり、fetch・worktree確認や古いプロセスの終了を省略する根拠にはしません。
+
 通常利用から除外する旧worktreeは、Inagawaの `syllables-finder-class-materials`、`syllables-finder-claude`、`.codex/worktrees/53dd/syllables-finder` です。これらの生成済みアプリ3個は2026-11-16にゴミ箱へ移しました。未保存文書はInagawaの `~/Documents/SingingWorkspaceRecovery-2026-11-16` に保存しました。ソースとGit履歴は調査用に保持し、ユーザーの明示的な依頼なしに古いアプリを再生成しません。
 
 教材は `.songproj` を最新版で開き、アプリの共有メニューまたは同じ版の `SongPrintTool` で出力します。表示順・デザイン・色も合わせます。既存ビルドの使い回しや独自PDFレイアウトへの置き換えをしません。

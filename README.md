@@ -244,8 +244,12 @@ index の数え方（`journey` の例）:
 
 SwiftUIで作る新アプリの基盤は [`native/`](native/) にあります。現行の母音核教材アプリは上記の方法で引き続き起動できます。新アプリの設計正本は [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) から始まる8文書、進捗と検証結果は [`docs/WORK_LOG.md`](docs/WORK_LOG.md) です。
 
-macOSの開発用実行は `native/新アプリを起動.command` をダブルクリックします。Command Line ToolsとSwift 6が必要です。シェルからは `native/scripts/build-app.sh`、`native/scripts/swift-tool.sh test` を使います。新規文書の「サンプルを表示」から、10言語の伝承歌・童謡など13曲を選べます。言語名は一覧と歌詞画面に表示します。新しい8曲は[資料と収録範囲](docs/TRADITIONAL_SAMPLES.md)を記録した歌詞のみの読解サンプルです。自分の歌詞も追加できます。`.songproj`を保存すると言語と音楽の編集内容が残ります。開発用のサンプル文書が必要なら `native/scripts/swift-tool.sh build` の後に、ビルドされた `SongSampleTool /tmp/Practice.songproj`、`SongSampleTool --twinkle /tmp/Twinkle.songproj`、または `SongSampleTool --sample sakura /tmp/Sakura.songproj` で生成できます。きらきら星には `source/Twinkle.mid` を同梱します。既存ファイルは上書きしません。
+macOSの開発用実行は `native/新アプリを起動.command` をダブルクリックします。Command Line ToolsとSwift 6が必要です。シェルからは `native/scripts/build-app.sh`、`native/scripts/swift-tool.sh test` を使います。新規文書の「サンプルを表示」から、10言語の伝承歌・童謡など23曲を選べます。言語名は一覧と歌詞画面に表示します。サンプルは別の新規文書で開き、現在の教材は置き換えません。[資料と収録範囲](docs/TRADITIONAL_SAMPLES.md)、[旋律資料](docs/SAMPLE_MELODIES.md)も参照してください。自分の歌詞も追加できます。`.songproj`を保存すると言語と音楽の編集内容が残ります。開発用のサンプル文書が必要なら `native/scripts/swift-tool.sh build` の後に、ビルドされた `SongSampleTool /tmp/Practice.songproj`、`SongSampleTool --twinkle /tmp/Twinkle.songproj`、または `SongSampleTool --sample sakura /tmp/Sakura.songproj` で生成できます。きらきら星には `source/Twinkle.mid` を同梱します。既存ファイルは上書きしません。
 
-現在動く範囲はReading、歌詞と音符の対応表示、音節の対応変更、音符の基本数値編集、単旋律のガイド音再生、Mock意味解析とOllamaへの任意接続です。歌唱画面には複数小節の一覧と2小節の詳細、鍵盤付きピアノロール/単旋律五線、曲通し/範囲再生を追加しました。五線には拍子と休符を表示し、歌唱段にはフレーズ訳を表示します。きらきら星は12小節・6行・42音節を42音符へ対応させた第1節で、IPAとカタカナ読みも含みます。ツールバーの「印刷用に書き出す」から、A4のWordまたはPDF練習シートを保存できます。シートには原文・訳・語の意味・IPA・カタカナ読みを載せます。現段階の印刷シートには五線譜を載せていません。歌声合成、一般的なMIDI/MusicXML入出力、Apple Foundation Models、cloud AIはまだ実装していません。Ollamaは利用者がローカルで起動し、明示してモデルを選んだときだけ利用します。UIから有料APIは呼び出しません。実装の確認結果と残りは[作業記録](docs/WORK_LOG.md)に記録しました。
+現在は、歌詞・意味・IPA・カタカナを読む画面、複数声部の音符と歌詞の対応、ステップ入力、MIDI（SMF）の読み込み、ガイド音の曲通し／範囲再生が使えます。A4のWord・PDF歌詞シートは、共有メニューから表示順・色・デザインを指定して書き出します。mainの歌詞シートには五線譜を含みません。
+
+意味・発音の補完は内蔵辞書、対応するMacのApple Foundation Models、Ollama、任意のOpenAI互換APIを使います。初期設定では外部APIは無効です。APIを使うには「AI接続」で送信を許可し、モデルとキーを設定します。API利用料が発生する場合があります。キーはKeychainに保存し、曲ファイルには含めません。Ollamaは端末内モデルと確認できたものだけを使用し、クラウドモデルや実行先不明のモデルへ歌詞を送りません。補完内容は候補であり、教師による確認が必要です。[AI接続の仕様](docs/AI_PROVIDERS.md)を参照してください。
+
+macOS 14以降が対象です。iPad版、MusicXMLの入出力、歌声合成、App Store向け配布工程は未実装です。`build-app.sh` は開発用署名のアプリを作成します。「Singing Workspaceについて」でソース版を確認できます。公開研向けの署名・公証・初回利用テストは別途必要です。修正と検証状況は[作業記録](docs/WORK_LOG.md)に記録します。
 
 「きらきら星」の歌詞はJane Taylor『The Star』（1806）、旋律は伝承曲『Ah! vous dirai-je, maman』に由来します。[1806年版の所蔵情報](https://www.themorgan.org/music-manuscripts-and-printed-music/85839)、[1840年の歌詞付き楽譜](https://imslp.org/wiki/The_Little_Songster_(Webb,_George_James))を確認しました。MIDIは外部ファイルの転載ではなく、このアプリの音符データから生成します。

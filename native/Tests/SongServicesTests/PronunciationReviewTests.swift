@@ -13,6 +13,7 @@ private final class ReviewStub: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if LocalOllamaFixture.respondToMetadata(self) { return }
         do {
             let answer = Self.state.lock.withLock { Self.state.answer }
             let data = try answer?(request) ?? Data()
