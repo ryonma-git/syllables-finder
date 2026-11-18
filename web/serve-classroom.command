@@ -32,7 +32,11 @@ class WorksheetServer(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            # A participant may close or refresh the page during a dictionary download.
+            return
 
     def log_message(self, *args):
         pass
