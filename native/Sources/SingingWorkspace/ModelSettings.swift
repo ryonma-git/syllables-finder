@@ -12,15 +12,36 @@ final class ModelSettings: ObservableObject {
         preferences = defaults.data(forKey: storageKey).flatMap { try? JSONDecoder().decode(ModelPreferences.self, from: $0) } ?? ModelPreferences()
     }
     func save(_ preferences: ModelPreferences, newKey: String) throws {
+        let key = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !key.isEmpty { _ = try preferences.api.endpoint() }
         if preferences.api.enabled {
             _ = try preferences.api.endpoint()
             guard !preferences.api.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw ProviderError.unavailable("APIのモデル名を入力してください。")
             }
+            if key.isEmpty { _ = try apiKey(for: preferences.api) }
         }
-        if !newKey.isEmpty { try ModelKeychain.save(newKey, account: preferences.api.baseURL) }
+        if !key.isEmpty { try ModelKeychain.save(key, account: preferences.api.baseURL) }
         defaults.set(try JSONEncoder().encode(preferences), forKey: storageKey)
         self.preferences = preferences
+    }
+    func apiKey(for api: APIModelConfiguration) throws -> String {
+        var saved = try ModelKeychain.read(account: api.baseURL)
+        if saved.isEmpty, api.isOfficialOpenAI {
+            // Preserve a key entered with the other accepted trailing-slash spelling.
+            let alternate = api.baseURL.hasSuffix("/") ? APIModelConfiguration.openAIBaseURL : api.baseURL + "/"
+            saved = try ModelKeychain.read(account: alternate)
+        }
+        let key = api.resolvedKey(saved: saved, openAIEnvironmentKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"])
+        guard !key.isEmpty else {
+            throw ProviderError.unavailable("「AI接続」で、このAPIを利用するプロジェクトのAPIキーを入力してください。")
+        }
+        return key
+    }
+    /// The preferred pronunciation workflow needs no local model discovery.
+    func preferredOpenAIClient() throws -> ModelClient? {
+        guard preferences.usesOpenAIPronunciation else { return nil }
+        return ModelClient(.api(preferences.api, key: try apiKey(for: preferences.api)))
     }
     /// Verification has its own selection; only the already-authorized API is exposed.
     func reviewClients() async -> [ModelClient] {
@@ -35,14 +56,14 @@ final class ModelSettings: ObservableObject {
         }
         clients += ordered.map { ModelClient(.ollama($0)) }
         if config.api.enabled, !config.api.model.isEmpty,
-           let key = try? ModelKeychain.read(account: config.api.baseURL), !key.isEmpty {
+           let key = try? apiKey(for: config.api) {
             clients.append(ModelClient(.api(config.api, key: key)))
         }
         return clients
     }
     func clients() async -> [ModelClient] {
         let config = preferences
-        let key = config.api.enabled ? (try? ModelKeychain.read(account: config.api.baseURL)) ?? "" : ""
+        let key = config.api.enabled ? (try? apiKey(for: config.api)) ?? "" : ""
         return await ModelDiscovery.clients(preferences: config, apiKey: key)
     }
 }

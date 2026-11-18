@@ -27,6 +27,7 @@ struct ModelConnectionSheet: View {
                     }
                     Text("自動では発音はAppleFM優先、意味・訳は導入済みQwen 3.5を優先します。使えない場合は他のローカルAI、送信を許可したAPIの順で試します。")
                         .font(.caption).foregroundStyle(.secondary)
+                    apiSettings
                     GroupBox("AppleFM · このMacのApple Intelligence") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(appleStatus).font(.callout)
@@ -58,20 +59,6 @@ struct ModelConnectionSheet: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }.padding(6)
                     }
-                    GroupBox("OpenAI互換API") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Toggle("このAPIへの歌詞送信を許可する", isOn: $draft.api.enabled)
-                            TextField("ベースURL（末尾 /v1）", text: $draft.api.baseURL).textFieldStyle(.roundedBorder)
-                            TextField("モデル名", text: $draft.api.model).textFieldStyle(.roundedBorder)
-                            SecureField("APIキー（空欄なら保存済みキーを使用）", text: $key).textFieldStyle(.roundedBorder)
-                            Text("キーはこのMacのキーチェーンに保存します。API利用料がかかる場合があります。")
-                                .font(.caption).foregroundStyle(.secondary)
-                            HStack {
-                                Button("APIの応答をテスト") { testAPI() }.disabled(working || !draft.api.enabled)
-                                Text(apiStatus).font(.callout)
-                            }
-                        }.padding(6)
-                    }
                     GroupBox("辞書のみでも使えます") {
                         Text("内蔵の英語発音辞書と、このMacで有効な辞書を使います。辞書にない読みは未設定として残し、単語の定義と全文翻訳を区別します。")
                             .font(.callout).frame(maxWidth: .infinity, alignment: .leading).padding(6)
@@ -95,6 +82,61 @@ struct ModelConnectionSheet: View {
                 Button("ダウンロードして追加") { download() }
             } message: { Text("Ollamaがモデルをダウンロードします。数GB以上の空き容量が必要な場合があります。既存モデルは削除しません。") }
     }
+    private var apiSettings: some View {
+        GroupBox("OpenAI・互換API") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Button("OpenAIを優先する") {
+                        let sameProvider = draft.api.isOfficialOpenAI
+                        if !sameProvider { key = "" }
+                        let wasEnabled = sameProvider && draft.api.enabled
+                        draft.api = APIModelConfiguration()
+                        draft.api.enabled = wasEnabled
+                        draft.mode = .api
+                        apiStatus = "未確認"
+                    }
+                    Text(draft.api.isOfficialOpenAI ? "OpenAI · " + draft.api.model : draft.api.model)
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Text("OpenAIを優先すると、歌詞を行ごとに送信し、文脈に沿って音節・発音・カタカナ読みを取得します。")
+                    .font(.caption).foregroundStyle(.secondary)
+                DisclosureGroup("接続先・モデルを変更") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("ベースURL（末尾 /v1）", text: Binding(get: { draft.api.baseURL }, set: { url in
+                            guard draft.api.baseURL != url else { return }
+                            draft.api.baseURL = url
+                            draft.api.enabled = false
+                            key = ""; apiStatus = "未確認"
+                        })).textFieldStyle(.roundedBorder)
+                        TextField("モデル名", text: $draft.api.model).textFieldStyle(.roundedBorder)
+                        if draft.api.isOfficialOpenAI {
+                            Picker("OpenAIの接続方式", selection: Binding(get: { draft.api.openAITransport ?? .chatCompletions },
+                                                                    set: { draft.api.openAITransport = $0 })) {
+                                Text("Responses API").tag(APIModelConfiguration.OpenAITransport.responses)
+                                Text("Chat Completions").tag(APIModelConfiguration.OpenAITransport.chatCompletions)
+                            }
+                        }
+                    }.padding(.top, 4)
+                }
+                SecureField("APIキー（設定済みなら空欄）", text: $key).textFieldStyle(.roundedBorder)
+                Text("入力したキーはこのMacのキーチェーンに保存します。API利用料はキーを発行した組織に計上されます。配布先の方はご自身のキーで利用できます。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if draft.api.isOfficialOpenAI {
+                    Text("対象プランのAPIクレジットを有効化した方は、連携したOpenAI組織のプロジェクトキーを使えます。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Link("APIキーを管理", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                        Link("クレジット残高を確認", destination: URL(string: "https://platform.openai.com/settings/organization/billing/credit-grants")!)
+                    }.font(.caption)
+                }
+                Toggle("このAPIへの歌詞送信を許可する", isOn: $draft.api.enabled)
+                HStack {
+                    Button("APIの応答をテスト") { testAPI() }.disabled(working || !draft.api.enabled)
+                    Text(apiStatus).font(.callout)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+        }
+    }
     private var selectedLocal: String? {
         models.contains(draft.localModel) ? draft.localModel : PronunciationCompletion.model(from: models) ?? models.first
     }
@@ -113,7 +155,8 @@ struct ModelConnectionSheet: View {
     private func testAPI() {
         do {
             _ = try draft.api.endpoint()
-            let apiKey = key.isEmpty ? try ModelKeychain.read(account: draft.api.baseURL) : key
+            let typedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            let apiKey = typedKey.isEmpty ? try settings.apiKey(for: draft.api) : typedKey
             test(ModelClient(.api(draft.api, key: apiKey)), target: .api)
         } catch { apiStatus = error.localizedDescription }
     }

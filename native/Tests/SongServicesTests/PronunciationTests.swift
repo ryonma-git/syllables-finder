@@ -91,6 +91,108 @@ struct PronunciationTests {
         #expect(result.document.syllables.map(\.id) == song.syllables.map(\.id))
     }
 
+    private func openAIResponse(_ words: [[String: Any]]) throws -> Data {
+        let json = try JSONSerialization.data(withJSONObject: ["words": words])
+        let text = String(decoding: json, as: UTF8.self)
+        return try JSONSerialization.data(withJSONObject: ["status": "completed", "output": [
+            ["type": "message", "role": "assistant", "content": [["type": "output_text", "text": text]]]
+        ]])
+    }
+
+    private func openAIClient(_ session: URLSession) -> ModelClient {
+        var api = APIModelConfiguration()
+        api.enabled = true
+        return ModelClient(.api(api, key: "fixture"), session: session)
+    }
+
+    @MainActor @Test func openAISegmentsWordsChoosesContextAndReusesAcceptedWork() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Wind Zorava. Moon!", language: "en", syllabify: true)
+        let context = song.phrases[0].originalText, ids = song.phrases.map(\.id)
+        let firstWordID = song.words[0].id
+        let priorWordID = song.words[1].id
+        let priorSyllableIDs = song.words[0].syllableIDs
+        let moon = song.words[2]
+        #expect(song.syllables(in: moon).allSatisfy { !$0.ipa.value.isEmpty && !$0.reading.value.isEmpty })
+        // A saved, unprotected word with no automatic spelling groups is eligible too.
+        song.syllables.removeAll { $0.parentWordID == priorWordID }; song.words[1].syllableIDs = []
+        let session = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let input = try JSONSerialization.jsonObject(with: Data((body["input"] as! String).utf8)) as! [String: Any]
+            #expect(input["context"] as? String == context)
+            let words = input["words"] as! [[String: Any]]
+            #expect(words.map { $0["surface"] as! String } == ["Wind", "Zorava.", "Moon!"])
+            #expect(words[1]["spelling"] as? String == "Zorava")
+            let choices = words[0]["dictionaryIPA"] as! [String]
+            let choice = try #require(choices.firstIndex { $0.contains("aɪ") })
+            return try self.openAIResponse([
+                ["id": 1, "dictionaryChoice": -1, "ipa": "zərɑvə", "syllables": [
+                    ["text": "Zo", "ipa": "zə", "reading": ""], ["text": "ra", "ipa": "rɑ", "reading": ""],
+                    ["text": "va", "ipa": "və", "reading": ""]]],
+                ["id": 0, "dictionaryChoice": choice, "ipa": "", "syllables": [["text": "Wind", "ipa": "", "reading": ""]]],
+                ["id": 2, "dictionaryChoice": 0, "ipa": "", "syllables": [["text": "Moon", "ipa": "", "reading": ""]]]
+            ])
+        }
+        defer { session.invalidateAndCancel() }
+        for _ in 0..<2 {
+            let issues = try await OpenAILyricPronunciation.run(phraseIDs: ids, client: openAIClient(session), current: { song },
+                apply: { OpenAILyricPronunciation.merge($0, from: $1, phraseID: $2, into: &song) }, progress: { _ in })
+            #expect(issues.isEmpty)
+        }
+        #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 1)
+        #expect(song.words[0].id == firstWordID && song.words[0].syllableIDs == priorSyllableIDs)
+        #expect(song.syllables(in: song.words[0]).first?.ipa.value.contains("aɪ") == true)
+        #expect(song.syllables(in: song.words[1]).map(\.text.value) == ["Zo", "ra", "va"])
+        #expect(song.syllables.allSatisfy { $0.text.source.provider == "OpenAI" && !$0.reading.value.isEmpty })
+        #expect(!OpenAILyricPronunciation.hasWork(in: song, phraseIDs: Set(ids)))
+        try song.validate()
+    }
+
+    @MainActor @Test func openAIHoldsInvalidWordsAndKeepsManualAndConnectedAnnotations() async throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "casa vino mano luna rosa", language: "es", syllabify: true)
+        let line = song.phrases[0].id
+        try song.setSyllables(wordID: song.words[1].id, texts: ["vi", "no"])
+        let lastID = song.words[4].syllableIDs[0], middleID = song.words[3].syllableIDs[0]
+        song.syllables[song.syllables.firstIndex(where: { $0.id == lastID })!].connectedReading = .init("ロ")
+        song.syllables[song.syllables.firstIndex(where: { $0.id == middleID })!].reading.edit("ル")
+        let original = song
+        let response = session { request in
+            let body = try JSONSerialization.jsonObject(with: try Self.body(request)) as! [String: Any]
+            let input = try JSONSerialization.jsonObject(with: Data((body["input"] as! String).utf8)) as! [String: Any]
+            let words = input["words"] as! [[String: Any]]
+            #expect(words.map { $0["surface"] as! String } == ["casa", "vino", "mano"])
+            #expect(words[1]["groupPolicy"] as? String == "fixed")
+            return try self.openAIResponse([
+                ["id": 0, "dictionaryChoice": -1, "ipa": "kasa", "syllables": [
+                    ["text": "cas", "ipa": "ka", "reading": "カ"], ["text": "a", "ipa": "sa", "reading": "サ"]]],
+                ["id": 1, "dictionaryChoice": -1, "ipa": "bino", "syllables": [
+                    ["text": "vi", "ipa": "bi", "reading": "ビ"], ["text": "no", "ipa": "no", "reading": "ノ"]]],
+                ["id": 2, "dictionaryChoice": -1, "ipa": "mano", "syllables": [
+                    ["text": "wrong original", "ipa": "xx", "reading": "マ"]]]
+            ])
+        }
+        defer { response.invalidateAndCancel() }
+        let endBeat = try Beat(1)
+        let issues = try await OpenAILyricPronunciation.run(phraseIDs: [line], client: openAIClient(response), current: { song },
+            apply: { result, snapshot, id in
+                // A note link appeared while the model was producing same-count but different boundaries.
+                song.alignments = [.init(languageTargets: [.init(.syllable, song.words[0].syllableIDs[0])],
+                    musicTargets: [.timeRange(.init(start: .zero, end: endBeat))], relation: .manual)]
+                song.metadata.title = "編集中"
+                OpenAILyricPronunciation.merge(result, from: snapshot, phraseID: id, into: &song)
+            }, progress: { _ in })
+        #expect(issues.map(\.surface) == ["mano"])
+        #expect(song.metadata.title == "編集中" && song.alignments.count == 1)
+        for index in [0, 2, 3, 4] {
+            #expect(song.syllables(in: song.words[index]) == original.syllables(in: original.words[index]))
+        }
+        #expect(song.words[1].syllableIDs == original.words[1].syllableIDs)
+        #expect(song.syllables(in: song.words[1]).map(\.text) == original.syllables(in: original.words[1]).map(\.text))
+        #expect(song.syllables(in: song.words[1]).map(\.reading.value) == ["ビ", "ノ"])
+        try song.validate()
+    }
+
     private func session(_ answer: @escaping @Sendable (URLRequest) throws -> Data) -> URLSession {
         PronunciationStub.state.lock.withLock {
             PronunciationStub.state.calls = 0
@@ -260,6 +362,28 @@ struct PronunciationTests {
         }, progress: { _ in })
         #expect(PronunciationCompletion.missingWords(in: song, phraseIDs: Set(ids)).isEmpty)
         #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 3)
+    }
+
+    @Test func officialOpenAIUsesStructuredEphemeralResponsesAndReadsAssistantText() async throws {
+        let session = session { request in
+            #expect(request.url?.absoluteString == "https://api.openai.com/v1/responses")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fake-test-key")
+            let bytes = try Self.body(request)
+            #expect(!String(decoding: bytes, as: UTF8.self).contains("fake-test-key"))
+            let body = try #require(try JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+            #expect(body["store"] as? Bool == false)
+            #expect(body["max_output_tokens"] as? Int == 4096)
+            let format = try #require((body["text"] as? [String: Any])?["format"] as? [String: Any])
+            #expect(format["strict"] as? Bool == true)
+            let schema = try #require(format["schema"] as? [String: Any])
+            #expect(schema["additionalProperties"] as? Bool == false)
+            #expect(schema["required"] as? [String] == ["ok"])
+            return Data(#"{"status":"completed","output":[{"type":"reasoning"},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"ok\":true}"}]}]}"#.utf8)
+        }
+        defer { session.invalidateAndCancel() }
+        var config = APIModelConfiguration(); config.enabled = true
+        try await ModelClient(.api(config, key: "fake-test-key"), session: session).probe()
+        #expect(PronunciationStub.state.lock.withLock { PronunciationStub.state.calls } == 1)
     }
 
     @Test func compatibleAPIUsesChosenEndpointAndHeaderWithoutLeakingKeyIntoPayload() async throws {

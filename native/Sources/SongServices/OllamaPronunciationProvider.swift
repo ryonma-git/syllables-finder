@@ -267,7 +267,7 @@ public struct OllamaPronunciationProvider: Sendable {
 
     /// A conservative omission check, not proof of pronunciation. A compound with multiple
     /// vowel-bearing components must not silently collapse to its first component.
-    private static func coversCompoundComponents(_ ipa: String, surface: String) -> Bool {
+    static func coversCompoundComponents(_ ipa: String, surface: String) -> Bool {
         let parts = surface.lowercased().split(separator: "-")
         guard parts.count > 1 else { return true }
         let minimum = parts.filter { $0.contains { "aeiouy".contains($0) } }.count
@@ -281,7 +281,7 @@ public struct OllamaPronunciationProvider: Sendable {
     }
 
     /// Catch explicit rhotic/GOAT contradictions; this is not a complete accent or accuracy proof.
-    private static func isBritishCitationIPA(_ value: String) -> Bool {
+    static func isBritishCitationIPA(_ value: String) -> Bool {
         let text = EnglishPronunciation.phoneticKey(value)
         guard !text.contains("oʊ"), !text.contains("ɚ"), !text.contains("ɝ") else { return false }
         let letters = Array(text)

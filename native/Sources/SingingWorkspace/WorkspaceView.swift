@@ -129,6 +129,7 @@ struct WorkspaceView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             if session.mode == .reading {
                                 ReadingView(song: song, session: session, preferences: displayPreferences,
+                                            usesOpenAI: modelSettings.preferences.usesOpenAIPronunciation,
                                             completePronunciation: { completeAnnotations(song.phrases.map(\.id), meanings: false) },
                                             completeMeanings: { completeAnnotations(song.phrases.map(\.id), pronunciation: false) },
                                             checkPronunciation: { showingPronunciationCheck = true },
@@ -542,6 +543,7 @@ struct WorkspaceView: View {
         LyricsEntrySheet(input: $input, language: $inputLanguage, englishStyle: $inputEnglishStyle,
                          canChooseEnglishStyle: song.phrases.isEmpty, splitSyllables: $splitSyllables,
                          method: modelSettings.preferences.mode.label,
+                         usesOpenAI: modelSettings.preferences.usesOpenAIPronunciation,
                          cancel: { addingLyrics = false }, add: addLyrics)
             .onAppear {
                 let current = song.metadata.sourceLanguage
@@ -580,18 +582,22 @@ struct WorkspaceView: View {
         stopPronunciation()
         pronunciationIssues = []
         let ids = Set(phraseIDs)
+        let openAI = modelSettings.preferences.usesOpenAIPronunciation
         mutate("辞書で補完") {
-            if pronunciation {
+            if pronunciation && !openAI {
                 EnglishPronunciation.repairAutomaticSegmentation(in: &$0, phraseIDs: ids)
                 EnglishPronunciation.apply(to: &$0, phraseIDs: ids)
             }
             if meanings { DictionaryLookup.apply(to: &$0, phraseIDs: ids) }
         }
-        let missingSounds = pronunciation && !PronunciationCompletion.missingWords(in: song, phraseIDs: ids).isEmpty
+        let needsSounds = pronunciation && (openAI
+            ? OpenAILyricPronunciation.hasWork(in: song, phraseIDs: ids)
+            : !PronunciationCompletion.missingWords(in: song, phraseIDs: ids).isEmpty)
         let missingMeanings = MeaningCompletion.missing(in: song, phraseIDs: ids)
         let needsMeanings = meanings && missingMeanings.words + missingMeanings.lines > 0
-        guard missingSounds || needsMeanings else {
-            pronunciationStatus = "対象の未設定項目はありません。"; return
+        guard needsSounds || needsMeanings else {
+            pronunciationStatus = openAI && pronunciation ? "今回解析できる音節・発音はありません。解析済みの語や手修正した語は保持します。" : "対象の未設定項目はありません。"
+            return
         }
         func remainingStatus() -> String {
             var parts: [String] = []
@@ -618,12 +624,33 @@ struct WorkspaceView: View {
         pronunciationStatus = "利用できるAIを確認中…"
         pronunciationTask = Task { @MainActor in
             do {
-                let clients = await modelSettings.clients()
-                try Task.checkCancellation()
                 var failures: [String] = []
                 let progress: (String) -> Void = { value in
                     if pronunciationRun == run { pronunciationStatus = value }
                 }
+                if openAI && needsSounds {
+                    do {
+                        guard let client = try modelSettings.preferredOpenAIClient() else { throw CancellationError() }
+                        let issues = try await OpenAILyricPronunciation.run(phraseIDs: phraseIDs, client: client,
+                            current: { file.song }, apply: { result, snapshot, id in
+                                guard pronunciationRun == run else { return }
+                                mutate("OpenAIで音節・発音を解析") {
+                                    OpenAILyricPronunciation.merge(result, from: snapshot, phraseID: id, into: &$0)
+                                }
+                            }, progress: progress)
+                        if pronunciationRun == run { pronunciationIssues = issues }
+                    } catch is CancellationError { throw CancellationError() }
+                    catch { failures.append(error.localizedDescription) }
+                }
+                try Task.checkCancellation()
+                var clients = needsMeanings || !openAI ? await modelSettings.clients() : []
+                if openAI && !failures.isEmpty {
+                    clients.removeAll { client in
+                        if case .api(let config, _) = client.backend { return config.isOfficialOpenAI }
+                        return false
+                    }
+                }
+                try Task.checkCancellation()
                 if needsMeanings {
                     do {
                         try await MeaningCompletion.run(phraseIDs: phraseIDs,
@@ -636,7 +663,7 @@ struct WorkspaceView: View {
                     catch { failures.append(error.localizedDescription) }
                 }
                 try Task.checkCancellation()
-                if missingSounds {
+                if needsSounds && !openAI {
                     do {
                         let issues = try await PronunciationCompletion().run(phraseIDs: phraseIDs, clients: clients, current: { file.song }, apply: { result, snapshot, id in
                             guard pronunciationRun == run else { return }
@@ -647,8 +674,11 @@ struct WorkspaceView: View {
                     catch { failures.append(error.localizedDescription) }
                 }
                 guard pronunciationRun == run else { return }
-                pronunciationStatus = "補完が終了しました。" + remainingStatus() + "。候補を確認して使ってください。"
-                if let failure = failures.first { pronunciationStatus! += " " + failure }
+                if let failure = failures.first {
+                    pronunciationStatus = "補完できなかった項目があります。" + failure + " " + remainingStatus()
+                } else {
+                    pronunciationStatus = "補完が終了しました。" + remainingStatus() + "。候補を確認して使ってください。"
+                }
             } catch {
                 guard pronunciationRun == run else { return }
                 pronunciationStatus = "補完が止まりました。歌詞と反映済みの内容は保持しています。" + error.localizedDescription

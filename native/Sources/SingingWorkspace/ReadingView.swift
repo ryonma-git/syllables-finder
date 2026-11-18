@@ -6,6 +6,7 @@ struct ReadingView: View {
     let song: SongDocument
     @ObservedObject var session: WorkspaceSession
     @ObservedObject var preferences: DisplayPreferences
+    let usesOpenAI: Bool
     let completePronunciation: () -> Void
     let completeMeanings: () -> Void
     let checkPronunciation: () -> Void
@@ -147,9 +148,11 @@ struct ReadingView: View {
         Button("発音をチェック…", systemImage: "checkmark.magnifyingglass", action: checkPronunciation)
             .disabled(pronunciationRunning)
             .help("辞書との相違とIPA・カタカナの整合性を確認します。生成とは別のAIでも検証できます。読みは変更しません。")
-        Button("未設定の発音を補完", systemImage: "sparkles", action: completePronunciation)
+        Button(usesOpenAI ? "OpenAIで音節・発音を解析" : "未設定の発音を補完", systemImage: "sparkles", action: completePronunciation)
             .disabled(pronunciationRunning)
-            .help("辞書を適用し、AI接続の設定に従って未設定のIPA・カタカナを補完します。手修正は保持します。")
+            .help(usesOpenAI
+                  ? "対象の行をOpenAIに送り、文脈に合う音節区切り・IPA・カタカナ読みを求めます。手修正と音符への対応は保持します。"
+                  : "辞書を適用し、AI接続の設定に従って未設定のIPA・カタカナを補完します。手修正は保持します。")
         Button("未設定の意味・訳を補完", systemImage: "text.book.closed", action: completeMeanings)
             .disabled(pronunciationRunning)
             .help("全行の未設定の単語の意味と日本語訳を補完します。既存の意味・訳と手修正は保持します。")

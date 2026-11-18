@@ -10,6 +10,7 @@ struct LyricsEntrySheet: View {
     let canChooseEnglishStyle: Bool
     @Binding var splitSyllables: Bool
     let method: String
+    let usesOpenAI: Bool
     let cancel: () -> Void
     let add: () -> Void
 
@@ -44,7 +45,7 @@ struct LyricsEntrySheet: View {
                 .font(.body).frame(minHeight: 100, maxHeight: .infinity)
                 .border(Color.secondary.opacity(0.2)).accessibilityLabel("追加する歌詞")
             if splitSyllables && !lines.isEmpty {
-                Text("音節の候補（先頭3行）").font(.caption.weight(.semibold)).foregroundStyle(.teal)
+                Text(usesOpenAI ? "端末での仮区切り（先頭3行）" : "音節の候補（先頭3行）").font(.caption.weight(.semibold)).foregroundStyle(.teal)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(lines.prefix(3).enumerated()), id: \.offset) { _, line in
@@ -55,7 +56,9 @@ struct LyricsEntrySheet: View {
                 }.frame(height: 70)
             }
             Group {
-                Text("追加後に意味・訳" + (splitSyllables ? "・発音" : "") + "を補完：\(method)。手修正は保持します。")
+                Text(usesOpenAI && splitSyllables
+                     ? "追加すると歌詞を1行ずつOpenAIに送り、音節・発音記号・カタカナ読みを解析します。未設定の意味と訳も補完します。"
+                     : "追加後に意味・訳" + (splitSyllables ? "・発音" : "") + "を補完：\(method)。手修正は保持します。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()

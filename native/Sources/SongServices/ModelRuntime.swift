@@ -5,10 +5,28 @@ import FoundationModels
 #endif
 
 public struct APIModelConfiguration: Codable, Sendable, Equatable {
-    public var baseURL = "https://api.openai.com/v1"
-    public var model = ""
+    public static let openAIBaseURL = "https://api.openai.com/v1"
+    public static let openAIModel = "gpt-6.2-sol"
+    public enum OpenAITransport: String, Codable, Sendable { case responses, chatCompletions }
+    public var baseURL = Self.openAIBaseURL
+    public var model = Self.openAIModel
     public var enabled = false
+    /// Previously saved settings used Chat Completions and have no transport field.
+    public var openAITransport: OpenAITransport? = .responses
     public init() {}
+
+    public var isOfficialOpenAI: Bool {
+        baseURL == Self.openAIBaseURL || baseURL == Self.openAIBaseURL + "/"
+    }
+    public var usesResponsesAPI: Bool { isOfficialOpenAI && openAITransport == .responses }
+
+    /// An environment key belongs exclusively to the official endpoint.
+    public func resolvedKey(saved: String, openAIEnvironmentKey: String?) -> String {
+        let key = saved.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !key.isEmpty { return key }
+        guard isOfficialOpenAI else { return "" }
+        return openAIEnvironmentKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
 
     public func endpoint() throws -> URL {
         guard let url = URL(string: baseURL), let host = url.host,
@@ -16,7 +34,7 @@ public struct APIModelConfiguration: Codable, Sendable, Equatable {
               url.scheme == "https" || (url.scheme == "http" && ["localhost", "127.0.0.1", "[::1]"].contains(host)) else {
             throw ProviderError.unavailable("APIのURLはHTTPS、またはこのMacのlocalhostを指定してください。")
         }
-        return url.appendingPathComponent("chat/completions")
+        return url.appendingPathComponent(usesResponsesAPI ? "responses" : "chat/completions")
     }
 }
 
@@ -35,6 +53,7 @@ public struct ModelPreferences: Codable, Sendable, Equatable {
     public var mode: Mode = .automatic
     public var localModel = ""
     public var api = APIModelConfiguration()
+    public var usesOpenAIPronunciation: Bool { mode == .api && api.enabled && api.isOfficialOpenAI }
     public init() {}
 }
 
@@ -47,14 +66,14 @@ public struct ModelClient: Sendable {
         switch backend {
         case .apple: "AppleFM（このMac）"
         case .ollama(let model): "Ollama · " + model
-        case .api(let config, _): "API · " + config.model
+        case .api(let config, _): (config.isOfficialOpenAI ? "OpenAI · " : "API · ") + config.model
         }
     }
     public var source: FieldSource {
         switch backend {
         case .apple: .init(.ai, provider: "Apple Foundation Models", model: "system-default")
         case .ollama(let model): .init(.ai, provider: "Ollama", model: model)
-        case .api(let config, _): .init(.ai, provider: "OpenAI-compatible", model: config.model)
+        case .api(let config, _): .init(.ai, provider: config.isOfficialOpenAI ? "OpenAI" : "OpenAI-compatible", model: config.model)
         }
     }
 
@@ -105,16 +124,67 @@ public struct ModelClient: Sendable {
             guard config.enabled, !key.isEmpty, !config.model.trimmingCharacters(in: .whitespaces).isEmpty else {
                 throw ProviderError.unavailable("APIの利用許可・モデル名・APIキーを設定してください。")
             }
+            if config.usesResponsesAPI {
+                return try await openAIResponse(config, key: key, instructions: instructions, input: input, schema: schema)
+            }
             // json_object is supported by more compatible servers than strict JSON Schema.
-            let body: [String: Any] = ["model": config.model, "stream": false,
+            var body: [String: Any] = ["model": config.model, "stream": false,
                 "messages": [["role": "system", "content": instructions + "\nReturn JSON matching this schema:\n" + String(decoding: schema, as: UTF8.self)],
                              ["role": "user", "content": input]],
                 "response_format": ["type": "json_object"]]
+            if config.isOfficialOpenAI {
+                body["max_completion_tokens"] = 4096
+                body["store"] = false
+            }
             let data = try await request(url: config.endpoint(), body: body, key: key)
             struct Envelope: Decodable { struct Choice: Decodable { struct Message: Decodable { let content: String? }; let message: Message }; let choices: [Choice] }
             guard let content = try JSONDecoder().decode(Envelope.self, from: data).choices.first?.message.content else { throw ProviderError.malformedResponse }
             return Data(content.utf8)
         }
+    }
+
+    private func openAIResponse(_ config: APIModelConfiguration, key: String, instructions: String, input: String, schema: Data) async throws -> Data {
+        guard let object = try JSONSerialization.jsonObject(with: schema) as? [String: Any] else { throw ProviderError.malformedResponse }
+        let body: [String: Any] = [
+            "model": config.model, "store": false, "max_output_tokens": 4096,
+            "instructions": instructions, "input": input,
+            "text": ["format": ["type": "json_schema", "name": "song_analysis", "strict": true,
+                                "schema": Self.closedSchema(object)]]
+        ]
+        let data = try await request(url: config.endpoint(), body: body, key: key)
+        struct Response: Decodable {
+            struct Item: Decodable {
+                struct Part: Decodable { let type: String; let text: String? }
+                let type: String; let role: String?; let content: [Part]?
+            }
+            let status: String; let output: [Item]
+        }
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        guard response.status == "completed" else {
+            throw ProviderError.unavailable("OpenAIの応答が途中で終了しました。長い歌詞の行は分けてお試しください。")
+        }
+        let parts = response.output.filter { $0.type == "message" && $0.role == "assistant" }.flatMap { $0.content ?? [] }
+        let result = parts.filter { $0.type == "output_text" }.compactMap(\.text).joined()
+        guard !parts.contains(where: { $0.type == "refusal" }), !result.isEmpty else { throw ProviderError.malformedResponse }
+        return Data(result.utf8)
+    }
+
+    /// Responses strict mode requires closed objects with every property declared required.
+    /// A field the provider schema allowed to be absent remains optional by accepting null.
+    private static func closedSchema(_ node: [String: Any]) -> [String: Any] {
+        var result = node
+        if let properties = node["properties"] as? [String: [String: Any]] {
+            let required = Set(node["required"] as? [String] ?? [])
+            var fields = properties.mapValues(closedSchema)
+            for (name, field) in fields where !required.contains(name) {
+                fields[name] = ["anyOf": [field, ["type": "null"]]]
+            }
+            result["properties"] = fields
+            result["required"] = properties.keys.sorted()
+            result["additionalProperties"] = false
+        }
+        if let items = node["items"] as? [String: Any] { result["items"] = closedSchema(items) }
+        return result
     }
 
     public func probe() async throws {
@@ -134,6 +204,20 @@ public struct ModelClient: Sendable {
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, http.statusCode == 200, data.count < 2_000_000 else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if case .api(let config, _) = backend, config.isOfficialOpenAI {
+                switch status {
+                case 401: throw ProviderError.unavailable("OpenAIがAPIキーを認証できません（401）。「AI接続」でキーを確認してください。")
+                case 403: throw ProviderError.unavailable("OpenAIのアクセス権がありません（403）。プロジェクトのキーでこのAPIとモデルを利用できるか確認してください。")
+                case 404: throw ProviderError.unavailable("OpenAIのモデルが見つかりません（404）。モデル名とプロジェクトの利用権限を確認してください。")
+                case 429:
+                    let error = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? [String: Any]
+                    let exhausted = ["insufficient_quota", "billing_hard_limit_reached"].contains(error?["code"] as? String ?? "")
+                    throw ProviderError.unavailable(exhausted
+                        ? "OpenAIの利用枠に達しました（429）。API組織のクレジット残高と請求設定を確認してください。"
+                        : "OpenAIの利用上限に達しました（429）。少し待ってから再試行してください。")
+                default: break
+                }
+            }
             throw ProviderError.unavailable("\(label)から有効な応答がありません（HTTP \(status)）。接続設定を確認してください。")
         }
         return data

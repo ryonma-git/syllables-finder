@@ -38,7 +38,7 @@ public enum PronunciationReview {
         guard !entry.aiSources.isEmpty else { return .noAIGenerator }
         var unknown = false
         for source in entry.aiSources {
-            guard let provider = source.provider, ["Apple Foundation Models", "Ollama", "OpenAI-compatible"].contains(provider),
+            guard let provider = source.provider, ["Apple Foundation Models", "Ollama", "OpenAI", "OpenAI-compatible"].contains(provider),
                   let model = source.model, !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 unknown = true; continue
             }
