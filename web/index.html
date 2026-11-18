@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#173f41">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://api.openai.com/v1/responses; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>歌唱練習シート ｜ Singing Worksheet</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="dictionary.js"></script>
+  <script defer src="engine.js"></script>
+  <script defer src="worksheet.js"></script>
+  <script defer src="openai.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+<header class="mast">
+  <div class="brand"><span class="mark" aria-hidden="true">♫</span><span>Singing Worksheet</span></div>
+  <nav aria-label="ファイルとヘルプ"><button id="open">教材を開く</button><button id="help">使い方</button></nav>
+</header>
+<main>
+  <aside class="editor">
+    <h1>歌唱練習シート</h1>
+    <p class="intro">英語の歌詞から、音節と発音つきの教材を作れます。</p>
+    <div class="input-head"><label for="title">曲名</label></div>
+    <input id="title" maxlength="160" type="text" placeholder="曲名を入力">
+    <div class="input-head"><label for="lyrics">歌詞</label><button class="link" id="sample">入力例を使う</button></div>
+    <textarea id="lyrics" maxlength="16000" rows="8" placeholder="歌うまとまりごとに改行します。" spellcheck="false"></textarea>
+    <p class="hint">1行が教材の1フレーズになります。</p>
+    <button class="primary wide" id="generate">教材を作成</button>
+    <hr>
+    <fieldset><legend>教材に載せる項目</legend>
+      <label><input id="kana" type="checkbox" checked>カタカナ読み</label>
+      <label><input id="ipa" type="checkbox" checked>発音記号（IPA）</label>
+      <label><input id="meaning" type="checkbox" checked>日本語の意味</label>
+    </fieldset>
+    <button id="ai" class="wide">OpenAIで補完…</button>
+    <div class="hint">英語の発音辞書は端末内で動きます。AIで補完する場合は、ご自身のAPIキーを使います。</div>
+  </aside>
+  <section class="workspace" aria-label="教材のプレビュー">
+    <div class="toolbar"><div><h2>教材プレビュー</h2><p id="count"></p></div>
+      <div class="tools"><button id="save">教材データを保存</button><button class="primary" id="print">印刷・PDF</button><button class="primary" id="sharePDF" hidden>PDFを共有</button></div>
+    </div>
+    <div id="status" aria-live="polite" role="status"></div>
+    <div id="paper" class="paper"></div>
+  </section>
+</main>
+<dialog id="dialog"><form id="dialogForm"><div id="dialogBody"></div><div id="dialogFoot" class="dialog-foot"></div></form></dialog>
+<input type="file" accept=".json,application/json" id="file" hidden>
+</body></html>

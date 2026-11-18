@@ -13,6 +13,7 @@ let package = Package(
         .executable(name: "SongSampleTool", targets: ["SongSampleTool"]),
         .executable(name: "SongGenerateTool", targets: ["SongGenerateTool"]),
         .executable(name: "SongPrintTool", targets: ["SongPrintTool"]),
+        .executable(name: "SingingWorksheet", targets: ["SingingWorksheet"]),
         .executable(name: "SingingWorkspace", targets: ["SingingWorkspace"])
     ],
     targets: [
@@ -24,6 +25,7 @@ let package = Package(
         .executableTarget(name: "SongSampleTool", dependencies: ["SongCore"]),
         .executableTarget(name: "SongGenerateTool", dependencies: ["SongCore", "SongServices"]),
         .executableTarget(name: "SongPrintTool", dependencies: ["SongCore", "SongPrint"]),
+        .executableTarget(name: "SingingWorksheet", dependencies: ["SongCore", "SongServices", "SongPrint"]),
         .executableTarget(name: "SingingWorkspace", dependencies: ["SongCore", "SongServices", "SongPrint", "SongNotation"]),
         .testTarget(name: "SongCoreTests", dependencies: ["SongCore"]),
         .testTarget(name: "SongPrintTests", dependencies: ["SongCore", "SongPrint"]),

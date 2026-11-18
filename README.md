@@ -12,6 +12,10 @@ Word（.docx）ファイルや PDF を生成する、ローカルGUIアプリで
 下部にページ番号「1 / 2」が入ります。本文は空行で区切られた連ごとに、左へ淡い縦線が付きます。
 装飾には赤系の色を使いません（赤＝声をのせる母音、という意味を保つため）。
 
+## 公開研で使う歌唱練習シート
+
+歌詞入力・発音と意味の編集・A4出力に絞ったMac版、iPad版、Web版があります。[使い方と配布手順](docs/SINGING_WORKSHEET.md)を参照してください。
+
 ## このツールの目的
 
 日本の小学生が、英語の歌やチャンツを **流暢に「読める」** ようになるための教材づくりを助けます。
@@ -252,6 +256,6 @@ macOSの開発用実行は `native/新アプリを起動.command` をダブル�
 
 意味・発音の補完は内蔵辞書、対応するMacのApple Foundation Models、Ollama、任意のOpenAI互換APIを使います。初期設定では外部APIは無効です。APIを使うには「AI接続」で送信を許可し、モデルとキーを設定します。API利用料が発生する場合があります。キーはKeychainに保存し、曲ファイルには含めません。Ollamaは端末内モデルと確認できたものだけを使用し、クラウドモデルや実行先不明のモデルへ歌詞を送りません。補完内容は候補であり、教師による確認が必要です。[AI接続の仕様](docs/AI_PROVIDERS.md)を参照してください。
 
-macOS 14以降が対象です。iPad版、MusicXMLの入出力、歌声合成、App Store向け配布工程は未実装です。`build-app.sh` は開発用署名のアプリを作成します。「Singing Workspaceについて」でソース版を確認できます。公開研向けの署名・公証・初回利用テストは別途必要です。修正と検証状況は[作業記録](docs/WORK_LOG.md)に記録します。
+macOS 14以降が対象です。フル機能版はmacOS向けです。公開研向けのiPadアプリは[歌唱練習シート](docs/SINGING_WORKSHEET.md)で利用できます。MusicXMLの入出力、歌声合成、App Store向け配布工程は未実装です。`build-app.sh` は開発用署名のアプリを作成します。「Singing Workspaceについて」でソース版を確認できます。公開研向けの署名・公証・初回利用テストは別途必要です。修正と検証状況は[作業記録](docs/WORK_LOG.md)に記録します。
 
 「きらきら星」の歌詞はJane Taylor『The Star』（1806）、旋律は伝承曲『Ah! vous dirai-je, maman』に由来します。[1806年版の所蔵情報](https://www.themorgan.org/music-manuscripts-and-printed-music/85839)、[1840年の歌詞付き楽譜](https://imslp.org/wiki/The_Little_Songster_(Webb,_George_James))を確認しました。MIDIは外部ファイルの転載ではなく、このアプリの音符データから生成します。
