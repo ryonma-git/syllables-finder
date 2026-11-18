@@ -9,12 +9,40 @@ struct ReadingView: View {
     let completePronunciation: () -> Void
     let completeMeanings: () -> Void
     let checkPronunciation: () -> Void
+    let importConnectedReading: () -> Void
     let pronunciationRunning: Bool
     let mutate: SongMutation
     @Environment(\.openSettings) private var openSettings
     @State private var pronunciationReport: EnglishPronunciation.Report?
     @State private var pronunciationPendingRevision: UInt64?
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if song.hasEnglishLyrics {
+                englishReadingControls.padding(.horizontal, 22).padding(.top, 12)
+            }
+            lyrics
+        }
+    }
+
+    private var englishReadingControls: some View {
+        HStack(spacing: 12) {
+            Picker("英語の読み方", selection: Binding(
+                get: { song.metadata.selectedEnglishReading },
+                set: { mode in mutate("英語の読み方を切り替え") { $0.metadata.englishReadingMode = mode } }
+            )) {
+                ForEach(EnglishReadingMode.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .help("つながり読みが未入力の音節には、単語読みを表示します。")
+            Button("つながり読みを取り込む…", action: importConnectedReading)
+                .disabled(pronunciationRunning)
+                .help("同じ歌詞と音節区切りの曲ファイルから取り込みます。音節ごとの編集は「単語の詳細」でできます。")
+        }
+    }
+
+    private var lyrics: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 13 * session.textScale) {
@@ -93,7 +121,7 @@ struct ReadingView: View {
     @ViewBuilder
     private var displayOptions: some View {
         Button("表示順の詳細設定…", systemImage: "line.3.horizontal") { openSettings() }
-        if song.phrases.contains(where: { EnglishPronunciation.supports(song.language(of: $0)) }) {
+        if song.hasEnglishLyrics {
             Picker("英語の発音", selection: Binding(
                 get: { song.metadata.englishPronunciationStyle },
                 set: { style in
@@ -158,17 +186,18 @@ struct ReadingView: View {
         VStack(alignment: .leading, spacing: 3 * session.textScale) {
             LyricsFlowLayout(horizontalSpacing: 8 * session.textScale, verticalSpacing: 5 * session.textScale) {
                 ForEach(song.words(in: phrase)) { word in
+                    let pronunciation = song.selectedPronunciation(for: word)
                     Button {
                         session.phraseID = phrase.id
                         session.wordID = word.id; session.syllableID = nil; session.showInspector = true
                     } label: {
                         InterlinearWord(word: word, syllables: song.syllables(in: word),
-                                        language: phrase.language ?? song.metadata.sourceLanguage, pronunciation: song.pronunciationDisplay(for: word),
+                                        language: song.language(of: phrase), pronunciation: pronunciation,
                                         selected: session.wordID == word.id, scale: session.textScale,
                                         elements: elements)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(song.pronunciationDisplay(for: word).reading)、IPA \(song.pronunciationDisplay(for: word).ipa)、詳細を編集")
+                    .accessibilityLabel("\(word.surface)、意味 \(word.contextualMeaning.value)、カタカナ \(pronunciation.reading)、IPA \(pronunciation.ipa)、詳細を編集")
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -304,9 +333,10 @@ struct WordInspector: View {
                 Text("ことばの詳細").font(.headline)
                 if let wordID, let word = song.word(wordID) {
                     Text(word.surface).font(.title2.bold())
-                    if let whole = song.pronunciationDisplay(for: word).whole {
+                    let pronunciation = song.selectedPronunciation(for: word)
+                    if let whole = pronunciation.whole {
                         Text("単語全体：/" + whole.ipa + "/　" + whole.reading).textSelection(.enabled)
-                        if let notice = song.pronunciationDisplay(for: word).notice { Text(notice).foregroundStyle(.orange) }
+                        if let notice = pronunciation.notice { Text(notice).foregroundStyle(.orange) }
                         if let review = whole.verification {
                             Text("AI検証（" + review.reviewer + "）：" + review.explanation).font(.caption).textSelection(.enabled)
                         }
@@ -322,8 +352,15 @@ struct WordInspector: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(syllable.text.value).font(.headline).foregroundStyle(.teal)
                             syllableField("音節", syllable: syllable, keyPath: \.text)
-                            syllableField("IPA", syllable: syllable, keyPath: \.ipa)
-                            syllableField("カタカナ読み", syllable: syllable, keyPath: \.reading)
+                            if song.usesConnectedEnglishReading(for: word) {
+                                connectedField("つながり読みのIPA", syllable: syllable, keyPath: \.connectedIPA,
+                                               placeholder: syllable.ipa.value)
+                                connectedField("つながり読みのカタカナ", syllable: syllable, keyPath: \.connectedReading,
+                                               placeholder: syllable.reading.value)
+                            } else {
+                                syllableField("IPA", syllable: syllable, keyPath: \.ipa)
+                                syllableField("カタカナ読み", syllable: syllable, keyPath: \.reading)
+                            }
                             syllableField("強勢", syllable: syllable, keyPath: \.stress)
                             DisclosureGroup("音素・モーラ") {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -352,6 +389,19 @@ struct WordInspector: View {
             get: { song.syllable(syllable.id)?[keyPath: keyPath].value ?? "" },
             set: { value in mutate(title + "を編集") { doc in
                 if let i = doc.syllables.firstIndex(where: { $0.id == syllable.id }) { doc.syllables[i][keyPath: keyPath].edit(value) }
+            }}))
+    }
+
+    private func connectedField(_ title: String, syllable: Syllable,
+                                keyPath: WritableKeyPath<Syllable, TextFieldValue?>, placeholder: String) -> some View {
+        LabeledEditor(title: title, manual: syllable[keyPath: keyPath]?.userEdited == true, placeholder: placeholder, text: Binding(
+            get: { song.syllable(syllable.id)?[keyPath: keyPath]?.value ?? "" },
+            set: { value in mutate(title + "を編集") { doc in
+                guard let index = doc.syllables.firstIndex(where: { $0.id == syllable.id }) else { return }
+                let previous = doc.syllables[index][keyPath: keyPath]
+                guard value != previous?.value else { return }
+                doc.syllables[index][keyPath: keyPath] = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? nil : .init(value, source: .init(.manual), userEdited: true)
             }}))
     }
 }
@@ -410,6 +460,7 @@ struct SyllableSplitEditor: View {
 struct LabeledEditor: View {
     let title: String
     let manual: Bool
+    var placeholder: String? = nil
     @Binding var text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -418,7 +469,8 @@ struct LabeledEditor: View {
                 Spacer()
                 if manual { Text("手動").foregroundStyle(.teal) }
             }.font(.caption).foregroundStyle(.secondary)
-            TextField(title, text: $text, axis: .vertical).textFieldStyle(.roundedBorder).accessibilityLabel(title)
+            TextField(placeholder ?? title, text: $text, axis: .vertical)
+                .textFieldStyle(.roundedBorder).accessibilityLabel(title)
         }
     }
 }

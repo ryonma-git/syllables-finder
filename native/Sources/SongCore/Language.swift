@@ -41,6 +41,8 @@ public struct SongMetadata: Codable, Equatable, Sendable {
     /// Missing in legacy documents: retain the previous American dictionary behavior.
     public var englishPronunciation: EnglishPronunciationStyle?
     public var englishPronunciationStyle: EnglishPronunciationStyle { englishPronunciation ?? .american }
+    public var englishReadingMode: EnglishReadingMode?
+    public var selectedEnglishReading: EnglishReadingMode { englishReadingMode ?? .word }
     public init(title: String = "名称未設定", sourceLanguage: String = "en") {
         self.title = title; self.sourceLanguage = sourceLanguage
     }
@@ -118,6 +120,8 @@ public struct Syllable: Codable, Equatable, Identifiable, Sendable {
     public var text: TextFieldValue
     public var ipa: TextFieldValue
     public var reading: TextFieldValue
+    public var connectedIPA: TextFieldValue?
+    public var connectedReading: TextFieldValue?
     public var stress: TextFieldValue = .init("")
     public var moraIDs: [UUID]
     /// Includes every phoneme, including those that also belong to a mora.

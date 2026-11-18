@@ -8,11 +8,11 @@ struct SongPrintTool {
     static func main() throws {
         let arguments = CommandLine.arguments
         let options = Array(arguments.dropFirst(3))
+        let valuedOptions = ["--order=", "--design=", "--accent=", "--vowel=", "--english-reading="]
         guard arguments.count >= 3,
               options.allSatisfy({ $0 == "--stage-german" || $0 == "--meaning-below" ||
-                  $0.hasPrefix("--order=") || $0.hasPrefix("--design=") ||
-                  $0.hasPrefix("--accent=") || $0.hasPrefix("--vowel=") }),
-              ["--order=", "--design=", "--accent=", "--vowel="].allSatisfy({ prefix in
+                  valuedOptions.contains(where: $0.hasPrefix) }),
+              valuedOptions.allSatisfy({ prefix in
                   options.filter { $0.hasPrefix(prefix) }.count <= 1
               }) else {
             throw PrintError.creationFailed
@@ -31,6 +31,11 @@ struct SongPrintTool {
         if options.contains("--stage-german") {
             guard NinthPronunciation.isAvailable(in: song) else { throw PrintError.creationFailed }
             NinthPronunciation.apply(.stage, to: &song)
+        }
+        if let value = options.first(where: { $0.hasPrefix("--english-reading=") }) {
+            guard let mode = EnglishReadingMode(rawValue: String(value.dropFirst("--english-reading=".count))),
+                  song.hasEnglishLyrics else { throw PrintError.creationFailed }
+            song.metadata.englishReadingMode = mode
         }
         let order: ReadingOrder
         if let option = options.first(where: { $0.hasPrefix("--order=") }) {

@@ -423,7 +423,7 @@ private struct SingingTimelineRow: View {
                         .help("\(word.surface) · \(word.contextualMeaning.value)")
             }
             ForEach(syllables) { span in
-                let syllable = span.syllable
+                let syllable = song.syllableForReading(span.syllable)
                 let segment = (span.from, span.to)
                     Button {
                         session.syllableID = syllable.id; session.wordID = syllable.parentWordID

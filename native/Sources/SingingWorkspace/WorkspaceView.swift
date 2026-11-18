@@ -132,6 +132,7 @@ struct WorkspaceView: View {
                                             completePronunciation: { completeAnnotations(song.phrases.map(\.id), meanings: false) },
                                             completeMeanings: { completeAnnotations(song.phrases.map(\.id), pronunciation: false) },
                                             checkPronunciation: { showingPronunciationCheck = true },
+                                            importConnectedReading: chooseConnectedReadingFile,
                                             pronunciationRunning: pronunciationRun != nil, mutate: mutate)
                             } else {
                                 phraseHeader(phrase)
@@ -673,6 +674,17 @@ struct WorkspaceView: View {
         newDocument(SongFile(package: package))
     }
 
+    private func chooseConnectedReadingFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.songProject]
+        panel.allowsMultipleSelection = false
+        panel.message = "同じ歌詞と音節の区切りを持つ、つながり読みの曲ファイルを選んでください。"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            mutate("つながり読みを取り込む") { try $0.importConnectedEnglishReading(from: url) }
+        }
+    }
+
     private func chooseMIDIFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.midi]
@@ -712,7 +724,8 @@ struct WorkspaceView: View {
         let title = snapshot.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
-        panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title).\(format.fileExtension)"
+        let readingSuffix = snapshot.hasConnectedEnglishReading ? "（\(snapshot.metadata.selectedEnglishReading.label)）" : ""
+        panel.nameFieldStringValue = "\(title.isEmpty ? "歌唱練習シート" : title)\(readingSuffix).\(format.fileExtension)"
         panel.message = "\(printAppearance.design.label)・表示順：\(readingOrder.legend)。画面で選んだ発音・カタカナ読みで書き出します。"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }

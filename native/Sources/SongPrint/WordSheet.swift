@@ -102,7 +102,8 @@ public enum WordSheet {
         let cells = zip(words, widths).map { word, width in
             let lyric = syllableParagraph(word, appearance: appearance)
             let meaning = paragraph(word.meaning.isEmpty ? "意味未設定" : word.meaning, style: "Gloss")
-            let ipa = paragraph(word.ipa.isEmpty ? "IPA未設定" : word.ipa, style: "Annotation")
+            let ipa = word.ipa.isEmpty ? paragraph("IPA未設定", style: "Annotation")
+                : paragraph(word.ipa, style: "Annotation", font: "Arial")
             let reading = paragraph(word.reading.isEmpty ? "カタカナ未設定" : word.reading, style: "Annotation")
             let ordered = elements.map { element in
                 switch element {
@@ -134,9 +135,10 @@ public enum WordSheet {
         return "<w:p><w:pPr><w:pStyle w:val=\"Lyric\"/></w:pPr>\(runs)</w:p>"
     }
 
-    private static func paragraph(_ text: String, style: String, keepNext: Bool = false) -> String {
+    private static func paragraph(_ text: String, style: String, keepNext: Bool = false,
+                                  font: String = "Hiragino Sans") -> String {
         let parts = text.components(separatedBy: .newlines).map { "<w:t xml:space=\"preserve\">\(escape($0))</w:t>" }.joined(separator: "<w:br/>")
-        return "<w:p><w:pPr><w:pStyle w:val=\"\(style)\"/>\(keepNext || style == "Phrase" || style == "Section" ? "<w:keepNext/>" : "")</w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"Hiragino Sans\" w:hAnsi=\"Hiragino Sans\" w:eastAsia=\"Hiragino Sans\"/><w:lang w:eastAsia=\"ja-JP\"/></w:rPr>\(parts)</w:r></w:p>"
+        return "<w:p><w:pPr><w:pStyle w:val=\"\(style)\"/>\(keepNext || style == "Phrase" || style == "Section" ? "<w:keepNext/>" : "")</w:pPr><w:r><w:rPr><w:rFonts w:ascii=\"\(font)\" w:hAnsi=\"\(font)\" w:eastAsia=\"\(font)\"/><w:lang w:eastAsia=\"ja-JP\"/></w:rPr>\(parts)</w:r></w:p>"
     }
 
     private static func escape(_ text: String) -> String {

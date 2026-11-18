@@ -6,6 +6,27 @@ import Testing
 
 @MainActor
 struct PrintTests {
+    @Test func readingSelectionChangesAnnotationsButKeepsTheOriginal() throws {
+        var song = SongDocument()
+        song.appendPhrase(text: "Let it", language: "en", syllabify: true)
+        song.syllables[0].ipa = .init("lɛt")
+        song.syllables[0].reading = .init("レット")
+        song.syllables[0].connectedIPA = .init("lɛɾ")
+        song.syllables[0].connectedReading = .init("レ")
+        for (mode, ipa, reading) in [(EnglishReadingMode.word, "/lɛt/", "レット"),
+                                     (.connected, "/lɛɾ/", "レ")] {
+            song.metadata.englishReadingMode = mode
+            let sheet = PrintSheet(song: song)
+            #expect(sheet.pronunciationLabel == mode.label)
+            #expect(sheet.phrases.first?.original == "Let it")
+            #expect(sheet.phrases.first?.words.first?.ipa == ipa)
+            #expect(sheet.phrases.first?.words.first?.reading == reading)
+            let pdf = try #require(PDFDocument(data: PDFSheet.render(sheet)))
+            #expect(pdf.findString(ipa, withOptions: []).count == 1)
+            #expect(pdf.findString("Let it", withOptions: []).count == 1)
+        }
+    }
+
     @Test func oversizedOriginalTranslationAndWordColumnsKeepEveryLineInsidePages() throws {
         var song = SongDocument()
         song.appendPhrase(text: "Blue sky", language: "en", syllabify: true)

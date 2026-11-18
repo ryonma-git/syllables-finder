@@ -31,16 +31,39 @@ public struct PronunciationDisplay: Sendable {
             notice = nil
         }
     }
+
+    fileprivate init(connected: Self, fallback: Self) {
+        ipa = connected.ipa.isEmpty ? fallback.ipa : connected.ipa
+        reading = connected.reading.isEmpty ? fallback.reading : connected.reading
+        notice = connected.ipa.isEmpty || connected.reading.isEmpty ? fallback.notice : connected.notice
+        whole = nil
+    }
 }
 
 extension SongDocument {
     public func pronunciationDisplay(for word: Word) -> PronunciationDisplay {
+        pronunciationDisplay(for: word, syllables: syllables(in: word))
+    }
+
+    public func selectedPronunciation(for word: Word) -> PronunciationDisplay {
+        let units = syllables(in: word)
+        let base = pronunciationDisplay(for: word, syllables: units)
+        guard usesConnectedEnglishReading(for: word), units.contains(where: \.hasConnectedEnglishReading) else {
+            return base
+        }
+        var selectedWord = word
+        selectedWord.wholePronunciation = nil
+        let alternate = pronunciationDisplay(for: selectedWord, syllables: units.map { $0.applyingConnectedEnglishReading() })
+        return .init(connected: alternate, fallback: base)
+    }
+
+    private func pronunciationDisplay(for word: Word, syllables: [Syllable]) -> PronunciationDisplay {
         var checked = word
         if let review = checked.wholePronunciation?.verification,
            review.context != phrase(word.parentPhraseID)?.originalText {
             checked.wholePronunciation?.verification = nil
         }
-        return .init(word: checked, syllables: syllables(in: word), style: metadata.englishPronunciationStyle)
+        return .init(word: checked, syllables: syllables, style: metadata.englishPronunciationStyle)
     }
 
     /// Changing IDs is safe only for untouched automatic spelling with no alignment/detail.

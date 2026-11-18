@@ -15,7 +15,8 @@ struct ScoreRow: View {
 
     static let lyricFont = "HiraginoSans-W3"
     static func readableScale(song: SongDocument, session: WorkspaceSession) -> Double {
-        LyricLayout.minimumBeatScale(song: song, minimum: SingingView.overviewScale) { syllables in
+        LyricLayout.minimumBeatScale(song: song, minimum: SingingView.overviewScale) { units in
+            let syllables = units.map(song.syllableForReading)
             var width = StaffPainter.textWidth(syllables.map(\.text.value).joined(separator: "‿"),
                                                font: lyricFont, size: 14 * session.textScale)
             if session.showReading {
@@ -222,7 +223,7 @@ struct ScoreRow: View {
 
     private func lyricButtons(_ block: Block, showMeanings: Bool) -> some View {
         ForEach(block.lyrics) { item in
-            let syllables = item.syllableIDs.compactMap { song.syllable($0) }
+            let syllables = item.syllableIDs.compactMap { song.syllable($0) }.map(song.syllableForReading)
             let reading = syllables.map { $0.reading.value.isEmpty ? "・" : $0.reading.value }.joined(separator: "‿")
             let ipa = syllables.map(\.ipa.value).filter { !$0.isEmpty }.joined(separator: "‿")
             Button {

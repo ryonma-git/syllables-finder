@@ -191,8 +191,11 @@ public struct PrintSheet: Sendable {
                 appearance: PrintAppearance = .init()) {
         self.order = order
         self.appearance = appearance
-        pronunciationLabel = NinthPronunciation.isAvailable(in: song)
-            ? (song.metadata.ninthPronunciation ?? .standard).label : nil
+        if NinthPronunciation.isAvailable(in: song) {
+            pronunciationLabel = (song.metadata.ninthPronunciation ?? .standard).label
+        } else {
+            pronunciationLabel = song.hasConnectedEnglishReading ? song.metadata.selectedEnglishReading.label : nil
+        }
         title = song.metadata.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "歌唱練習シート" : song.metadata.title
         phrases = song.sections.flatMap { section in
@@ -201,7 +204,7 @@ public struct PrintSheet: Sendable {
                             translation: phrase.translation.value,
                             words: song.words(in: phrase).map { word in
                     let syllables = song.syllables(in: word)
-                    let pronunciation = song.pronunciationDisplay(for: word)
+                    let pronunciation = song.selectedPronunciation(for: word)
                     return PrintWord(original: word.surface, meaning: word.contextualMeaning.value,
                                      syllables: syllables.map {
                                          PrintSyllable(text: $0.text.value, language: phrase.language ?? song.metadata.sourceLanguage)
